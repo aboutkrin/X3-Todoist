@@ -19,6 +19,9 @@
 #include "home/CrashActivity.h"
 #include "home/FileBrowserActivity.h"
 #include "home/HomeActivity.h"
+#ifdef X3_TODOIST_DASHBOARD
+#include "dashboard/DashboardActivity.h"
+#endif
 #include "library/LibraryListActivity.h"
 #include "network/CrossPointWebServerActivity.h"
 #include "network/UsbDriveActivity.h"
@@ -321,6 +324,15 @@ void ActivityManager::goToFullScreenMessage(std::string message, EpdFontFamily::
 }
 
 void ActivityManager::goHome(HomeMenuItem initialMenuItem, bool cleanInitialRefresh) {
+#ifdef X3_TODOIST_DASHBOARD
+  auto dashboard = makeUniqueNoThrow<DashboardActivity>(renderer, mappedInput);
+  if (!dashboard) {
+    LOG_ERR("DASH", "Dashboard activity allocation failed");
+    return;
+  }
+  replaceActivity(std::move(dashboard));
+  return;
+#endif
   if (initialMenuItem == HomeMenuItem::NONE && currentActivity) {
     const auto& activityName = currentActivity->name;
     if (activityName == "FileBrowser") {
@@ -358,6 +370,10 @@ void ActivityManager::popActivity() {
     pendingActivity.reset();
   }
   pendingAction = PendingAction::Pop;
+}
+
+uint32_t ActivityManager::scheduledWakeSeconds() const {
+  return currentActivity ? currentActivity->scheduledWakeSeconds() : 0;
 }
 
 bool ActivityManager::preventAutoSleep() const { return currentActivity && currentActivity->preventAutoSleep(); }

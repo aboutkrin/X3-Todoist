@@ -66,7 +66,11 @@ void HalPowerManager::setPowerSaving(bool enabled) {
   // Otherwise, no change needed
 }
 
-void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
+void HalPowerManager::startDeepSleep(HalGPIO& gpio, uint32_t wakeAfterSeconds) const {
+  // Timed battery wakes require the CPU rail to survive. Only enable this on
+  // the X3; battery timer wake must be verified on the installed panel revision.
+  const bool timedWake = wakeAfterSeconds > 0 && gpio.isXteinkDevice() && gpio.deviceIsX3();
+  if (timedWake) esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(wakeAfterSeconds) * 1000000ULL);
 #ifdef ENABLE_SERIAL_LOG
   // Tear down HWCDC so the host sees a clean disconnect and the peripheral
   // doesn't hold power domains that interfere with USB-powered GPIO wake.
@@ -84,7 +88,7 @@ void HalPowerManager::startDeepSleep(HalGPIO& gpio) const {
     // gpio_deep_sleep_hold_en), and a held pad silently ignores the drive.
     gpio_hold_dis(XTEINK_C3_GPIO13);
     gpio_set_direction(XTEINK_C3_GPIO13, GPIO_MODE_OUTPUT);
-    gpio_set_level(XTEINK_C3_GPIO13, 0);
+    gpio_set_level(XTEINK_C3_GPIO13, timedWake ? 1 : 0);
     gpio_hold_en(XTEINK_C3_GPIO13);
   }
 #endif

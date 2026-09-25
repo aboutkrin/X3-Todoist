@@ -6,6 +6,9 @@
 #include <string>
 #include <vector>
 
+namespace dashboard {
+struct View;
+}
 class Bitmap;
 class GfxRenderer;
 struct RecentBook;
@@ -237,6 +240,7 @@ class BaseTheme {
   static void drawProgressBar(const GfxRenderer& renderer, Rect rect, size_t current, size_t total);
   void drawBatteryLeft(const GfxRenderer& renderer, Rect rect,
                        bool showPercentage = true) const;  // Left aligned (reader mode)
+  static void drawDashboard(GfxRenderer& renderer, dashboard::View& view);
   virtual void fillBatteryIcon(const GfxRenderer& renderer, Rect rect, uint16_t percentage) const;
   virtual void drawButtonHints(GfxRenderer& renderer, const char* btn1, const char* btn2, const char* btn3,
                                const char* btn4) const;

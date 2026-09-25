@@ -42,6 +42,7 @@ class Activity {
   virtual void requestUpdateAndWait();
 
   virtual bool skipLoopDelay() { return false; }
+  virtual uint32_t scheduledWakeSeconds() const { return 0; }
   virtual bool preventAutoSleep() { return false; }
   // Exclusive storage activities suspend global controls and normal activity
   // transitions so no filesystem code races a raw SD-card owner.

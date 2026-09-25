@@ -276,7 +276,9 @@ void enterDeepSleep(bool fromTimeout = false) {
   // Commit to sleeping before goToSleep() runs the outgoing activity's onExit():
   // a WiFi activity would otherwise silentRestart() here and reboot instead.
   deepSleepInProgress = true;
-  activityManager.goToSleep(fromTimeout);
+  const uint32_t scheduledWake = activityManager.scheduledWakeSeconds();
+  // Keep the useful task list on the e-paper panel during dashboard sleep.
+  if (scheduledWake == 0) activityManager.goToSleep(fromTimeout);
 
   if (isQuickResumeSleep) {
     saveSleepFrameBuffer();
@@ -297,7 +299,7 @@ void enterDeepSleep(bool fromTimeout = false) {
   Storage.prepareForDeepSleep();
   LOG_DBG("MAIN", "Entering deep sleep");
 
-  powerManager.startDeepSleep(gpio);
+  powerManager.startDeepSleep(gpio, scheduledWake);
 }
 
 void setupDisplayAndFonts(bool seamless = false) {
@@ -536,6 +538,10 @@ void setup() {
   } else if (rebootedFromPanic) {
     // If we rebooted from a panic, go to crash report screen to show the panic info
     activityManager.goToCrashReport();
+#ifdef X3_TODOIST_DASHBOARD
+  } else if (true) {
+    activityManager.goHome();
+#endif
   } else if (resume == BootResume::Silent && snapshotTarget == SILENT_REBOOT_TARGET_READER &&
              !APP_STATE.openEpubPath.empty()) {
     activityManager.goToReader(APP_STATE.openEpubPath);
