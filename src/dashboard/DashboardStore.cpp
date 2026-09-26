@@ -94,6 +94,7 @@ bool Store::startWrite() {
   writing.magic = 0;  // An interrupted generation must never become active.
   writing.generation = header.generation + 1;
   writing.crc = 0xffffffffu;
+  LOG_INF("DASH", "Task cache write begin: slot=%d generation=%u", writeSlot, writing.generation);
   return Storage.openFileForWrite("DASH", path(writeSlot), output) &&
          output.write(&writing, sizeof(writing)) == sizeof(writing);
 }
@@ -110,10 +111,21 @@ bool Store::commit(time_t now) {
   writing.crc ^= 0xffffffffu;
   writing.syncedAt = now;
   if (!output.seek(0) || output.write(&writing, sizeof(writing)) != sizeof(writing)) return false;
-  output.flush();
-  output.close();
+  if (!output.sync()) {
+    LOG_ERR("DASH", "Task cache sync failed: slot=%d records=%u", writeSlot, writing.count);
+    return false;
+  }
+  if (!output.close()) {
+    LOG_ERR("DASH", "Task cache close failed: slot=%d", writeSlot);
+    return false;
+  }
   CacheHeader checked;
-  if (!verify(writeSlot, checked)) return false;
+  if (!verify(writeSlot, checked)) {
+    LOG_ERR("DASH", "Task cache verification failed: slot=%d", writeSlot);
+    return false;
+  }
+  LOG_INF("DASH", "Task cache verified: slot=%d generation=%u records=%u", writeSlot, checked.generation,
+          checked.count);
   return load(now);
 }
 bool Store::read(uint16_t record, Task& task) const {

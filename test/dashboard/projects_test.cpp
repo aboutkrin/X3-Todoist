@@ -45,6 +45,18 @@ int main(int argc, char** argv) {
   assert(catalog.commit() && catalog.count() == 2);
   Project project;
   assert(catalog.find("p", project) && !strcmp(project.name, "<Personal & Family>"));
+  assert(catalog.beginWrite());
+  assert(catalog.append(Project{"p", "Unconfirmed"}));
+  HalFile::failSync = true;
+  assert(!catalog.commit());
+  HalFile::failSync = false;
+  assert(catalog.count() == 2);
+  assert(catalog.find("p", project) && !strcmp(project.name, "<Personal & Family>"));
+  // Overwrite the unconfirmed generation before testing interruption recovery.
+  assert(catalog.beginWrite());
+  assert(catalog.append(Project{"p", "<Personal & Family>"}));
+  assert(catalog.append(Project{"w", "Work"}));
+  assert(catalog.commit());
   {
     ProjectCatalog interrupted;
     assert(interrupted.beginWrite());

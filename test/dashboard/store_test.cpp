@@ -69,6 +69,18 @@ int main(int argc, char** argv) {
     for (size_t i = 0; i < MAX_TASKS; ++i) assert(store.append(task));
     assert(!store.append(task));
   }
+  {
+    Store store;
+    assert(store.begin(selection) && store.load(now));
+    const auto previousSync = store.syncedAt();
+    const auto previousCount = store.count(0);
+    assert(store.startWrite() && store.append(task));
+    HalFile::failSync = true;
+    assert(!store.commit(now + 1));
+    HalFile::failSync = false;
+    assert(store.syncedAt() == previousSync && store.count(0) == previousCount);
+    store.finishWrite();
+  }
   Config config;
   // A reused generation with a different selected set must not accept an old snapshot.
   assert(selection.add(Project{"q", "Work"}));

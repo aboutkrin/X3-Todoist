@@ -107,7 +107,10 @@ bool ProjectSelection::save() {
         file.write(&SELECTION_MAGIC, sizeof(SELECTION_MAGIC)) != sizeof(SELECTION_MAGIC) ||
         file.write(this, sizeof(*this)) != sizeof(*this) || file.write(&crc, sizeof(crc)) != sizeof(crc))
       return false;
-    file.flush();
+    if (!file.sync()) {
+      LOG_ERR("DASH", "Project selection sync failed: slot=%d", target);
+      return false;
+    }
   }
   return readSelection(target, *previous) && previous->generation == generation;
 }
@@ -154,6 +157,7 @@ bool ProjectCatalog::beginWrite() {
   writing = Header{};
   writing.generation = header.generation + 1;
   writing.crc = 0xffffffffu;
+  LOG_INF("DASH", "Project cache write begin: slot=%d generation=%u", writeSlot, writing.generation);
   return Storage.ensureDirectoryExists("/.crosspoint") && Storage.openFileForWrite("DASH", path(writeSlot), output) &&
          output.write(&writing, sizeof(writing)) == sizeof(writing);
 }
@@ -169,9 +173,21 @@ bool ProjectCatalog::commit() {
   if (!output) return false;
   writing.magic = CATALOG_MAGIC;
   if (!output.seek(0) || output.write(&writing, sizeof(writing)) != sizeof(writing)) return false;
-  output.flush();
-  output.close();
+  if (!output.sync()) {
+    LOG_ERR("DASH", "Project cache sync failed: slot=%d records=%u", writeSlot, writing.count);
+    return false;
+  }
+  if (!output.close()) {
+    LOG_ERR("DASH", "Project cache close failed: slot=%d", writeSlot);
+    return false;
+  }
   Header checked;
-  return verify(writeSlot, checked) && load();
+  if (!verify(writeSlot, checked) || !load()) {
+    LOG_ERR("DASH", "Project cache verification failed: slot=%d", writeSlot);
+    return false;
+  }
+  LOG_INF("DASH", "Project cache verified: slot=%d generation=%u records=%u", writeSlot, checked.generation,
+          checked.count);
+  return true;
 }
 }  // namespace dashboard

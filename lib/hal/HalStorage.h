@@ -94,6 +94,8 @@ class HalFile : public Print {
   HalFile& operator=(const HalFile&) = delete;
 
   void flush();
+  // Flush data and directory metadata, reporting storage failures.
+  bool sync();
   size_t getName(char* name, size_t len);
   size_t size();
   size_t fileSize();

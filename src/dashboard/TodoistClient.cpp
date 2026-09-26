@@ -154,7 +154,11 @@ SyncResult TodoistClient::request(const char* path, const char* body) {
   if (cooldown.begin("dash-http", false) && cooldown.getLong64("retry-at", 0) > time(nullptr))
     return SyncResult::RateLimited;
   HalFile file;
-  if (!Storage.openFileForWrite("DASH", RESPONSE, file)) return SyncResult::StorageError;
+  LOG_INF("DASH", "Response write begin: %.*s", static_cast<int>(strcspn(path, "?/")), path);
+  if (!Storage.openFileForWrite("DASH", RESPONSE, file)) {
+    LOG_ERR("DASH", "Response open failed: %s", RESPONSE);
+    return SyncResult::StorageError;
+  }
   Sink sink{&file};
   // The SDK configuration exceeds the small local-variable budget.
   auto options = makeUniqueNoThrow<esp_http_client_config_t>();
@@ -200,7 +204,11 @@ SyncResult TodoistClient::request(const char* path, const char* body) {
             static_cast<int>(tlsError), tlsCode, tlsFlags);
   }
   esp_http_client_cleanup(http);
-  file.flush();
+  if (!file.sync()) {
+    LOG_ERR("DASH", "Response sync failed: %u bytes", static_cast<unsigned>(sink.size));
+    return SyncResult::StorageError;
+  }
+  LOG_INF("DASH", "Response write synced: %u bytes", static_cast<unsigned>(sink.size));
   if (sink.failed) return SyncResult::StorageError;
   if (code == 401 || code == 403) return SyncResult::Auth;
   if (code == 429) {

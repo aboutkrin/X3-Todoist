@@ -9,6 +9,7 @@ class HalFile {
   std::filesystem::path path;
 
  public:
+  inline static bool failSync = false;
   HalFile() = default;
   HalFile(HalFile&&) = default;
   HalFile& operator=(HalFile&&) = default;
@@ -37,6 +38,10 @@ class HalFile {
   }
   void flush() {
     if (file) file->flush();
+  }
+  bool sync() {
+    flush();
+    return !failSync && file && bool(*file);
   }
   bool close() {
     if (file) file->close();

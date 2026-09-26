@@ -50,6 +50,13 @@ int main(int argc, char** argv) {
   assert(client.sync(store) == SyncResult::Ok);
   assert(responses.empty());
   assert(store.count(0) == 2);
+  // A completed HTTP response is not usable when persisting it fails.
+  responses.push_back({"sync", 200, "{\"user\":{\"id\":\"me\"}}"});
+  HalFile::failSync = true;
+  assert(client.sync(store) == SyncResult::StorageError);
+  HalFile::failSync = false;
+  assert(responses.empty());
+  assert(store.count(0) == 2);
   Task selected;
   assert(store.read(store.entry(0, 0)->record, selected));
   assert(!strcmp(selected.project, "Work"));

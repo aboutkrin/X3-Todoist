@@ -56,6 +56,49 @@ and a 9,116-byte minimum since boot. The earlier SD response-write failure did n
 recur in this capture. On-device visual confirmation of Thai marks is still needed;
 the host previews and pagination/positioning tests pass.
 
+### Recurrent SD corruption investigation
+
+A second failure was captured in `build/dashboard-crash/sd-recurrence-serial.log`:
+opening `dashboard-response.json` for writing failed before HTTPS. Windows then
+reported an invalid first allocation unit for that file and an invalid size for
+`dashboard-a.bin`; both files were unreadable. The other 12 files were backed up
+with SHA-256 verification. CHKDSK repaired the filesystem, a subsequent scan was
+clean, and a 1 MiB write/read checksum test passed. All 12 readable files were
+unchanged after repair. These checks do not establish the card's reliability or
+identify whether the cause is the card, power interruption, or firmware.
+
+Dashboard writes now check `HalFile::sync()` (SdFat data/metadata flush under the
+storage mutex), and cache commits check close results. Serial logs identify
+response-write starts and successful flushes, plus task/project cache slots,
+generations and verification results. Logs exclude tokens, task content and
+project IDs. This adds no firmware heap allocation or diagnostic SD writes.
+It detects reported flush failures; it is not a confirmed corruption fix.
+All eight Windows host suites pass, including injected response/task/project
+flush failures. The dashboard firmware build, formatting wrapper and whitespace
+checks pass. The diagnostic binary and ELF are in
+`build/dashboard-release/sd-diagnostics/`. The diagnostic application was flashed
+at `0x10000` on COM3 and hash-verified, preserving the partition table and NVS.
+The captured startup sync succeeded (`Sync result 0`): project-cache generation
+12 and task-cache generation 8 verified, with seven tasks and a minimum free
+heap of 11,032 bytes since boot. Logs are in
+`build/dashboard-crash/sd-diagnostics-serial.log`. Repeated sync and sleep/wake
+testing is still required; this single success does not resolve the cause.
+
+To investigate on hardware:
+
+1. Back up the card before testing. Safely eject it from Windows and insert it
+   only while the reader is off. Avoid forced resets/removal during sync.
+2. Capture serial at 115200 baud to the computer throughout repeated manual
+   syncs and normal sleep/wake cycles. Record whether each cycle uses USB power
+   or battery, and keep the firmware binary/ELF with the logs.
+3. Stop the test at the first storage error. Preserve the log and inspect/back up
+   the card before repairing it again; do not repeatedly retry or format it.
+4. Repeat the same sequence with a known-working spare card. A failure following
+   the original card implicates it; failure on both shifts attention toward the
+   device, power, and firmware. Neither result alone conclusively proves cause.
+5. Recheck the filesystem after the test. One successful sync or a short host
+   write test is insufficient evidence that the recurring fault is resolved.
+
 Local artifacts and SHA-256 checksums are in `build/dashboard-release/` (ignored
 by Git). The app-only and factory images are different: choose neither for an
 existing installation until its backup and partition layout have been checked.
