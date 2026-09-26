@@ -27,10 +27,10 @@ static void syncResponses(bool empty = false) {
   responses.push_back(
       {"projects?limit=20", 200, "{\"results\":[{\"id\":\"p\",\"name\":\"Work\"}],\"next_cursor\":\"next\"}"});
   responses.push_back({"projects?limit=20&cursor=next", 200, "{\"results\":[],\"next_cursor\":null}"});
-  responses.push_back({"tasks?limit=20", 200,
+  responses.push_back({"tasks?limit=20&project_id=p", 200,
                        "{\"results\":[" + (empty ? std::string() : task("one") + "," + task("other", "someone-else")) +
                            "],\"next_cursor\":\"next\"}"});
-  responses.push_back({"tasks?limit=20&cursor=next", 200,
+  responses.push_back({"tasks?limit=20&project_id=p&cursor=next", 200,
                        "{\"results\":[" + (empty ? std::string() : task("two", "me")) + "],\"next_cursor\":null}"});
 }
 int main(int argc, char** argv) {
@@ -40,19 +40,22 @@ int main(int argc, char** argv) {
   tzset();
   Config config;
   assert(config.save("test-token", 1));
+  ProjectSelection selection;
+  assert(selection.add(Project{"p", "Work"}));
+  assert(selection.save());
   Store store;
-  assert(store.begin());
-  TodoistClient client(config);
+  assert(store.begin(selection));
+  TodoistClient client(config, selection);
   syncResponses();
   assert(client.sync(store) == SyncResult::Ok);
   assert(responses.empty());
-  assert(store.count(Section::Today) == 2);
+  assert(store.count(0) == 2);
   Task selected;
-  assert(store.read(store.entry(Section::Today, 0)->record, selected));
+  assert(store.read(store.entry(0, 0)->record, selected));
   assert(!strcmp(selected.project, "Work"));
   responses.push_back({"sync", 401, "{}"});
   assert(client.sync(store) == SyncResult::Auth);
-  assert(store.count(Section::Today) == 2);
+  assert(store.count(0) == 2);
   responses.push_back({"sync", 429, "{}"});
   assert(client.sync(store) == SyncResult::RateLimited);
   assert(client.sync(store) == SyncResult::RateLimited);
@@ -74,7 +77,7 @@ int main(int argc, char** argv) {
   syncResponses(true);
   assert(client.reconcile(rebooted, store) == SyncResult::Ok);
   assert(!rebooted.exists());
-  assert(store.count(Section::Today) == 0);
+  assert(store.count(0) == 0);
   assert(posted[posted.size() - 2] == firstCommand);
   assert(responses.empty());
   // Offline completion must not create a deferred user action.
@@ -103,6 +106,32 @@ int main(int argc, char** argv) {
   assert(client.reconcile(ackReboot, store) == SyncResult::Ok);
   assert(posted.size() == postCount + 1);  // Only the user resource query is posted.
   assert(responses.empty());
-  std::cout << "Todoist client: pagination, assignee filtering, auth, rate limits, lost ACK retry identity, offline "
+  assert(selection.add(Project{"w", "Work two"}));
+  assert(selection.save());
+  assert(!store.load(time(nullptr)));
+  responses.push_back({"sync", 200, "{\"user\":{\"id\":\"me\"}}"});
+  responses.push_back(
+      {"projects?limit=20", 200, R"({"results":[{"id":"p","name":"Work renamed"},{"id":"w","name":"Work two"}]})"});
+  responses.push_back(
+      {"tasks?limit=20&project_id=p", 200,
+       R"({"results":[{"id":"undated","project_id":"p","content":"No date","priority":4},{"id":"future","project_id":"p","content":"Future","due":{"date":"2099-01-01"}}]})"});
+  responses.push_back({"tasks?limit=20&project_id=w", 200,
+                       R"({"results":[{"id":"second","project_id":"w","content":"Second project"}]})"});
+  assert(client.sync(store) == SyncResult::Ok);
+  assert(store.count(0) == 2 && store.count(1) == 1);
+  assert(!strcmp(store.entry(0, 0)->id, "future"));
+  assert(!strcmp(store.entry(0, 1)->id, "undated"));
+  assert(store.read(store.entry(0, 0)->record, selected));
+  assert(!strcmp(selected.project, "Work renamed"));
+  responses.push_back({"sync", 200, "{\"user\":{\"id\":\"me\"}}"});
+  responses.push_back({"projects?limit=20", 200, R"({"results":[{"id":"p","name":"Work"}]})"});
+  responses.push_back({"tasks?limit=20&project_id=p", 200,
+                       R"({"results":[{"id":"wrong","project_id":"unselected","content":"Wrong project"}]})"});
+  assert(client.sync(store) == SyncResult::InvalidData);
+  store.finishWrite();
+  assert(store.load(time(nullptr)) && store.count(0) == 2 && store.count(1) == 1);
+  assert(responses.empty());
+  std::cout << "Todoist client: selected projects, undated/future tasks, snapshot isolation, pagination, assignee "
+               "filtering, auth, rate limits, lost ACK retry identity, offline "
                "completion and recurring conflict passed\n";
 }

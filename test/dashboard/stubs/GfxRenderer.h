@@ -1,5 +1,6 @@
 #pragma once
 #include <EpdFontFamily.h>
+#include <FontCacheManager.h>
 
 #include <cassert>
 #include <cstring>
@@ -9,7 +10,18 @@
 #include "fontIds.h"
 class GfxRenderer {
  public:
+  FontCacheManager* getFontCacheManager() { return nullptr; }
+  void displayBuffer() {}
   mutable std::ostringstream svg;
+  mutable size_t blackPixels = 0, whitePixels = 0;
+  void drawPixel(int x, int y, bool black = true) const {
+    assert(x >= 0 && x < 528 && y >= 0 && y < 792);
+    if (black)
+      ++blackPixels;
+    else
+      ++whitePixels;
+    svg << "<rect x='" << x << "' y='" << y << "' width='1' height='1' fill='" << (black ? "black" : "white") << "'/>";
+  }
   int getScreenWidth() const { return 528; }
   int getScreenHeight() const { return 792; }
   void getOrientedViewableTRBL(int* t, int* r, int* b, int* l) const { *t = *r = *b = *l = 0; }
@@ -17,6 +29,7 @@ class GfxRenderer {
     return id == NOTOSANS_18_FONT_ID ? 36 : id == NOTOSANS_16_FONT_ID ? 32 : id == NOTOSANS_14_FONT_ID ? 28 : 24;
   }
   int getLineHeight(int id) const { return fontSize(id) * 5 / 4; }
+  int getFontAscenderSize(int id) const { return fontSize(id); }
   int getTextWidth(int id, const char* text, EpdFontFamily::Style style = EpdFontFamily::REGULAR) const {
     double width = 0;
     for (const unsigned char* p = reinterpret_cast<const unsigned char*>(text); *p; ++p)

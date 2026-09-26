@@ -198,14 +198,8 @@ inline std::vector<StrId> homeThemeValues() {
 // Each entry has a key (for JSON API) and category (for grouping).
 // ACTION-type entries and entries without a key are device-only.
 //
-// The static list is constructed exactly once (master's optimization, #1086 +
-// #1636) so the per-entry SettingInfo cost is paid once; every call then copies
-// it. When an SdCardFontRegistry is supplied AND has SD card fonts installed,
-// the font-family entry is replaced in that copy with a registry-aware version.
-// The font-size entry is always rebuilt, since its options are point sizes read
-// from the active family rather than a fixed enum.
-inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* registry = nullptr,
-                                                const std::vector<DictionaryEntry>* dictionaries = nullptr) {
+// Persistence reads the board-specific metadata without copying UI options.
+inline const std::vector<SettingInfo>& getBaseSettingsList() {
   static const std::vector<SettingInfo> baseList = [] {
     // Enum settings are persisted as numeric values. Assign these labels by enum
     // value so a reordered menu or enum cannot silently swap their behavior.
@@ -497,46 +491,51 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
     if (!BoardConfig::isX4Pro()) eraseEntry(StrId::STR_DBL_CLICK_PWR_LIGHT);
     // Tilt page turn needs the QMI8658 IMU (X3).
     if (!halTiltSensor.isAvailable()) eraseEntry(StrId::STR_TILT_PAGE_TURN);
+    if (!BoardConfig::hasTouch()) {
+      // The reader menu style stays available on button boards (the toolbar
+      // chrome is button-navigable); only the touch controls are hidden.
+      v.erase(std::remove_if(v.begin(), v.end(),
+                             [](const SettingInfo& s) {
+                               return s.nameId == StrId::STR_TOUCH_READER_CONTROLS ||
+                                      s.nameId == StrId::STR_NEXT_PAGE_GESTURE ||
+                                      s.nameId == StrId::STR_PREV_PAGE_GESTURE;
+                             }),
+              v.end());
+    }
+    // The reader-menu gesture choice only makes sense where the menu stays
+    // reachable without the tap and the bottom edge is free (the capacitive
+    // Home key); everywhere else the bottom-edge up-swipe is Home and the
+    // center tap is the primary path, so the setting stays at its Tap default.
+    if (!BoardConfig::hasHomeKey()) {
+      v.erase(std::remove_if(v.begin(), v.end(),
+                             [](const SettingInfo& s) { return s.nameId == StrId::STR_SHOW_READER_MENU; }),
+              v.end());
+    }
+    if (BoardConfig::hasHomeKey()) {
+      v.reserve(v.size() + 3);
+      for (unsigned i = 0; i < 3; ++i) {
+        v.push_back(SettingInfo::StaticEnum(home_button::GESTURE_LABELS[i], home_button::FIELDS[i],
+                                            home_button::ACTION_LABELS, home_button::KEYS[i], StrId::STR_CAT_CONTROLS));
+      }
+    }
+    if (BoardConfig::hasTouch()) {
+      v.erase(std::remove_if(v.begin(), v.end(),
+                             [](const SettingInfo& s) {
+                               return s.nameId == StrId::STR_FRONT_BTN_FOLLOW_ORIENTATION ||
+                                      s.nameId == StrId::STR_SUNLIGHT_FADING_FIX ||
+                                      s.nameId == StrId::STR_BACK_SHORT_TO_FILE_BROWSER;
+                             }),
+              v.end());
+    }
     return v;
   }();
+  return baseList;
+}
 
-  std::vector<SettingInfo> v = baseList;
-  if (!BoardConfig::hasTouch()) {
-    // The reader menu style stays available on button boards (the toolbar
-    // chrome is button-navigable); only the touch controls are hidden.
-    v.erase(std::remove_if(v.begin(), v.end(),
-                           [](const SettingInfo& s) {
-                             return s.nameId == StrId::STR_TOUCH_READER_CONTROLS ||
-                                    s.nameId == StrId::STR_NEXT_PAGE_GESTURE ||
-                                    s.nameId == StrId::STR_PREV_PAGE_GESTURE;
-                           }),
-            v.end());
-  }
-  // The reader-menu gesture choice only makes sense where the menu stays
-  // reachable without the tap and the bottom edge is free (the capacitive
-  // Home key); everywhere else the bottom-edge up-swipe is Home and the
-  // center tap is the primary path, so the setting stays at its Tap default.
-  if (!BoardConfig::hasHomeKey()) {
-    v.erase(std::remove_if(v.begin(), v.end(),
-                           [](const SettingInfo& s) { return s.nameId == StrId::STR_SHOW_READER_MENU; }),
-            v.end());
-  }
-  if (BoardConfig::hasHomeKey()) {
-    v.reserve(v.size() + 3);
-    for (unsigned i = 0; i < 3; ++i) {
-      v.push_back(SettingInfo::StaticEnum(home_button::GESTURE_LABELS[i], home_button::FIELDS[i],
-                                          home_button::ACTION_LABELS, home_button::KEYS[i], StrId::STR_CAT_CONTROLS));
-    }
-  }
-  if (BoardConfig::hasTouch()) {
-    v.erase(std::remove_if(v.begin(), v.end(),
-                           [](const SettingInfo& s) {
-                             return s.nameId == StrId::STR_FRONT_BTN_FOLLOW_ORIENTATION ||
-                                    s.nameId == StrId::STR_SUNLIGHT_FADING_FIX ||
-                                    s.nameId == StrId::STR_BACK_SHORT_TO_FILE_BROWSER;
-                           }),
-            v.end());
-  }
+// UI callers own a copy with current font and dictionary options.
+inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* registry = nullptr,
+                                                const std::vector<DictionaryEntry>* dictionaries = nullptr) {
+  std::vector<SettingInfo> v = getBaseSettingsList();
   if (registry && registry->getFamilyCount() > 0) {
     auto it = std::find_if(v.begin(), v.end(), [](const SettingInfo& s) { return s.nameId == StrId::STR_FONT_FAMILY; });
     if (it != v.end()) {

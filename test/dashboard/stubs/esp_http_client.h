@@ -69,4 +69,10 @@ inline int esp_http_client_perform(HttpHandle* h) {
 }
 inline int esp_http_client_get_status_code(HttpHandle* h) { return h->status; }
 inline bool esp_http_client_is_complete_data_received(HttpHandle* h) { return h->complete; }
+inline int esp_http_client_get_errno(HttpHandle*) { return 0; }
+inline esp_err_t esp_http_client_get_and_clear_last_tls_error(HttpHandle*, int* code, int* flags) {
+  *code = 0;
+  *flags = 0;
+  return ESP_OK;
+}
 inline void esp_http_client_cleanup(HttpHandle* h) { delete h; }

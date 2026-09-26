@@ -4,11 +4,14 @@
 #include <memory>
 
 #include "DashboardModel.h"
+#include "DashboardProjects.h"
 
 namespace dashboard {
 struct CacheHeader {
   uint32_t magic = 0x58445431;
-  uint32_t version = 1;
+  uint32_t version = 2;
+  uint32_t selectionGeneration = 0;
+  uint32_t selectionFingerprint = 0;
   uint32_t generation = 0;
   uint32_t count = 0;
   int64_t syncedAt = 0;
@@ -16,24 +19,32 @@ struct CacheHeader {
 };
 class Store {
  public:
-  bool begin();
+  bool begin(const ProjectSelection& selected);
   bool load(time_t now);
+  void releaseIndex() {
+    index.reset();
+    indexCapacity = 0;
+    visibleCount = 0;
+  }
   bool startWrite();
   bool append(const Task& task);
   bool commit(time_t now);
-  void finishWrite() { output.close(); }
+  void finishWrite() {
+    if (output) output.close();
+  }
   bool read(uint16_t record, Task& task) const;
-  const IndexEntry* entry(Section section, size_t offset) const;
-  size_t count(Section section) const;
+  const IndexEntry* entry(size_t project, size_t offset) const;
+  size_t count(size_t project) const;
   time_t syncedAt() const { return header.syncedAt; }
   bool hasCache() const { return activeSlot >= 0; }
 
  private:
+  const ProjectSelection* selection = nullptr;
   static const char* path(int slot);
   bool verify(int slot, CacheHeader& result);
-  // One fixed index arena, allocated per dashboard activity instead of reserving
-  // permanent BSS or putting >40KB on the ESP32 loop task's stack.
+  // Sized to the cache and released during networking so TLS can use the heap.
   std::unique_ptr<IndexEntry[]> index;
+  size_t indexCapacity = 0;
   std::unique_ptr<Task> scratch;
   size_t visibleCount = 0;
   CacheHeader header;

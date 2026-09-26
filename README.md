@@ -1,4 +1,59 @@
-# CrossPoint Reader
+# X3 Todoist
+
+A Todoist dashboard for the **Xteink X3** e-reader, built on
+[CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader).
+
+## Features
+
+- Choose up to 16 Todoist projects through a local browser setup page.
+- Browse projects and tasks, including undated and future tasks assigned to you or unassigned.
+- Read Thai, English and monochrome emoji in project names and task text.
+- Complete tasks with confirmation and recovery for uncertain network responses.
+- Return with Back to the project or task position you selected.
+- Three text sizes, SD-backed task snapshots, Wi-Fi refresh and e-ink sleep display.
+
+## Setup
+
+Insert a working microSD card, open **Menu → Todoist setup**, and connect to Wi-Fi.
+Open the address shown on the X3 in a browser on the same trusted network. Pair
+using the displayed code, enter your Todoist API key if needed, then choose your
+projects and select **Save and refresh**. Menus remain in English.
+
+Keep API keys, SD-card contents, flash backups and serial logs private.
+
+## Build
+
+```sh
+git clone --recurse-submodules https://github.com/aboutkrin/X3-Todoist.git
+cd X3-Todoist
+python -m venv .venv
+# Activate the virtual environment, then:
+python -m pip install platformio==6.1.19 pyyaml
+pio run -e dashboard
+python test/dashboard/run.py
+```
+
+`dashboard` is the default PlatformIO environment. The host tests also require a
+C++20 compiler; Windows setup and firmware installation are covered in the
+[development and device guide](docs/dashboard/README.md).
+
+This is experimental firmware. Builds and host tests pass, and live Todoist sync
+has succeeded on the X3. SD-cache write failures have also recurred on the test
+card; see the guide for the current validation limits. Back up existing firmware
+and check its partition layout before installing.
+
+## Credits and licenses
+
+CrossPoint Reader and FreeInk SDK provide the reader, hardware and rendering
+foundation. The original [MIT license](LICENSE) is retained. Noto Emoji and Noto
+Sans Thai artwork is distributed under its included SIL Open Font License;
+Unicode emoji data has its included Unicode license. See the
+[emoji](src/dashboard/emoji/README.md) and [Thai](src/dashboard/thai/README.md)
+source notes.
+
+---
+
+## CrossPoint Reader foundation
 
 [![Fund contributors](https://img.shields.io/badge/%F0%9F%91%91_Fund_contributors-royalty.dev-BB953A?style=for-the-badge&labelColor=1a1a1a)](https://app.royalty.dev/crosspoint-reader/crosspoint-reader)
 

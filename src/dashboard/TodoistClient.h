@@ -15,17 +15,20 @@ enum class SyncResult {
   InvalidData,
   StorageError,
   Limit,
-  Pending
+  Pending,
+  ChooseProjects
 };
 class TodoistClient {
  public:
-  explicit TodoistClient(Config& config) : config(config) {}
+  explicit TodoistClient(Config& config, const ProjectSelection& selection) : config(config), selection(selection) {}
+  SyncResult refreshProjects();
   SyncResult sync(Store& store);
   SyncResult complete(const Task& task, Pending& pending, Store& store);
   SyncResult reconcile(Pending& pending, Store& store);
 
  private:
   Config& config;
+  const ProjectSelection& selection;
   SyncResult connect();
   SyncResult request(const char* path, const char* body = nullptr);
   SyncResult sendPending(Pending& pending);

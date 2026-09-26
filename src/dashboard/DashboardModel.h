@@ -13,6 +13,7 @@ enum class Section : uint8_t { Today, Overdue, Upcoming, Hidden };
 // Versioned device-local cache, never sent over the network.
 struct Task {
   char id[64]{};
+  char projectId[64]{};
   char parentId[64]{};
   char project[128]{};
   char title[1024]{};
@@ -28,6 +29,7 @@ struct IndexEntry {
   uint16_t record = 0;
   Section section = Section::Hidden;
   uint8_t priority = 1;
+  uint8_t projectIndex = 0;
 };
 
 // Accept date-only, floating local datetime and RFC3339 offsets. Date-only

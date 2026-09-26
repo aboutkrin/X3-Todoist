@@ -21,12 +21,7 @@
 namespace dashboard {
 namespace {
 constexpr const char* RESPONSE = "/.crosspoint/dashboard-response.json";
-constexpr const char* PROJECTS = "/.crosspoint/dashboard-projects.bin";
 constexpr size_t MAX_RESPONSE = 256 * 1024;
-struct Project {
-  char id[64]{};
-  char name[128]{};
-};
 struct Sink {
   HalFile* file;
   size_t size = 0;
@@ -171,14 +166,17 @@ SyncResult TodoistClient::request(const char* path, const char* body) {
   url += path;
   options->url = url.c_str();
   options->crt_bundle_attach = esp_crt_bundle_attach;
-  options->timeout_ms = 4500;
+  options->timeout_ms = 10000;
   options->disable_auto_redirect = true;
   options->event_handler = httpEvent;
   options->user_data = &sink;
   options->buffer_size = 1024;
   options->buffer_size_tx = 1024;
   auto http = esp_http_client_init(options.get());
-  if (!http) return SyncResult::Transport;
+  if (!http) {
+    LOG_ERR("DASH", "HTTP client initialization failed");
+    return SyncResult::Transport;
+  }
   const std::string authorization = std::string("Bearer ") + config.token;
   esp_http_client_set_header(http, "Authorization", authorization.c_str());
   esp_http_client_set_header(http, "Accept", "application/json");
@@ -192,6 +190,15 @@ SyncResult TodoistClient::request(const char* path, const char* body) {
   const auto result = esp_http_client_perform(http);
   const int code = esp_http_client_get_status_code(http);
   const bool complete = esp_http_client_is_complete_data_received(http);
+  if (result != ESP_OK || !complete || code != 200 || sink.failed) {
+    int tlsCode = 0, tlsFlags = 0;
+    const auto tlsError = esp_http_client_get_and_clear_last_tls_error(http, &tlsCode, &tlsFlags);
+    LOG_ERR("DASH", "HTTP %.*s: result=%d status=%d complete=%d bytes=%u storage=%d",
+            static_cast<int>(strcspn(path, "?/")), path, static_cast<int>(result), code, complete,
+            static_cast<unsigned>(sink.size), sink.failed);
+    LOG_ERR("DASH", "Transport errno=%d TLS=%d code=%d flags=%x", esp_http_client_get_errno(http),
+            static_cast<int>(tlsError), tlsCode, tlsFlags);
+  }
   esp_http_client_cleanup(http);
   file.flush();
   if (sink.failed) return SyncResult::StorageError;
@@ -205,8 +212,8 @@ SyncResult TodoistClient::request(const char* path, const char* body) {
   return SyncResult::Ok;
 }
 SyncResult TodoistClient::projects() {
-  HalFile output;
-  if (!Storage.openFileForWrite("DASH", PROJECTS, output)) return SyncResult::StorageError;
+  ProjectCatalog catalog;
+  if (!catalog.beginWrite()) return SyncResult::StorageError;
   std::string cursor;
   for (int page = 0; page < 100; ++page) {
     const std::string path =
@@ -224,24 +231,29 @@ SyncResult TodoistClient::projects() {
       if (!copyText(project.id, sizeof(project.id), item["id"] | "") || !project.id[0] ||
           !copyText(project.name, sizeof(project.name), item["name"] | ""))
         return SyncResult::Limit;
-      if (output.write(&project, sizeof(project)) != sizeof(project)) return SyncResult::StorageError;
+      if (!catalog.append(project)) return SyncResult::StorageError;
     }
     const char* next = doc["next_cursor"] | "";
-    if (!*next) return SyncResult::Ok;
+    if (!*next) return catalog.commit() ? SyncResult::Ok : SyncResult::StorageError;
     if (strlen(next) > 512 || cursor == next) return SyncResult::InvalidData;
     cursor = next;
   }
   return SyncResult::Limit;
 }
 bool TodoistClient::projectName(const char* id, char* out, size_t capacity) {
-  HalFile file;
-  if (!Storage.openFileForRead("DASH", PROJECTS, file)) return false;
+  ProjectCatalog catalog;
+  if (!catalog.load()) return false;
   Project project;
-  while (file.read(&project, sizeof(project)) == sizeof(project))
-    if (!strcmp(project.id, id)) return copyText(out, capacity, project.name);
+  if (catalog.find(id, project)) return copyText(out, capacity, project.name);
   return copyText(out, capacity, id);
 }
+SyncResult TodoistClient::refreshProjects() {
+  HalPowerManager::Lock power;
+  const auto result = connect();
+  return result == SyncResult::Ok ? projects() : result;
+}
 SyncResult TodoistClient::sync(Store& store) {
+  if (!selection.count) return SyncResult::ChooseProjects;
   HalPowerManager::Lock power;
   auto result = connect();
   if (result != SyncResult::Ok) return result;
@@ -257,6 +269,8 @@ SyncResult TodoistClient::sync(Store& store) {
   }
   result = projects();
   if (result != SyncResult::Ok) return result;
+  ProjectCatalog catalog;
+  if (!catalog.load()) return SyncResult::StorageError;
   if (!store.startWrite()) return SyncResult::StorageError;
   // One reusable record keeps long task text off the loop stack.
   auto task = makeUniqueNoThrow<Task>();
@@ -264,45 +278,56 @@ SyncResult TodoistClient::sync(Store& store) {
     LOG_ERR("DASH", "Task allocation failed");
     return SyncResult::Transport;
   }
-  std::string cursor;
-  for (int page = 0; page < 500; ++page) {
-    const std::string path = "tasks?limit=20" + (cursor.empty() ? std::string() : "&cursor=" + encode(cursor.c_str()));
-    result = request(path.c_str());
-    if (result != SyncResult::Ok) return result;
-    JsonAllocator allocator;
-    JsonDocument doc(&allocator), filter(&allocator);
-    for (const char* key : {"id", "content", "description", "project_id", "parent_id", "responsible_uid", "priority",
-                            "checked", "is_deleted"})
-      filter["results"][0][key] = true;
-    filter["results"][0]["due"]["date"] = true;
-    filter["results"][0]["due"]["datetime"] = true;
-    filter["results"][0]["due"]["is_recurring"] = true;
-    filter["next_cursor"] = true;
-    if (!readJson(doc, filter) || !doc["results"].is<JsonArray>()) return SyncResult::InvalidData;
-    for (JsonObjectConst item : doc["results"].as<JsonArrayConst>()) {
-      const char* assignee = item["responsible_uid"] | "";
-      if ((item["checked"] | false) || (item["is_deleted"] | false) || (*assignee && strcmp(assignee, userId)))
-        continue;
-      const char* due = item["due"]["datetime"] | (item["due"]["date"] | "");
-      if (classify(due, time(nullptr)) == Section::Hidden) continue;
-      memset(task.get(), 0, sizeof(Task));
-      if (!copyText(task->id, sizeof(task->id), item["id"] | "") || !task->id[0] ||
-          !copyText(task->parentId, sizeof(task->parentId), item["parent_id"] | "") ||
-          !copyText(task->title, sizeof(task->title), item["content"] | "") ||
-          !copyText(task->description, sizeof(task->description), item["description"] | "") ||
-          !copyText(task->due, sizeof(task->due), due) ||
-          !projectName(item["project_id"] | "", task->project, sizeof(task->project)))
-        return SyncResult::Limit;
-      task->priority = item["priority"] | 1;
-      task->recurring = item["due"]["is_recurring"] | false;
-      if (!store.append(*task)) return SyncResult::Limit;
+  for (size_t projectIndex = 0; projectIndex < selection.count; ++projectIndex) {
+    Project project;
+    if (!catalog.find(selection.projects[projectIndex].id, project)) continue;
+    std::string cursor;
+    bool finished = false;
+    for (int page = 0; page < 500; ++page) {
+      const std::string path = "tasks?limit=20&project_id=" + encode(project.id) +
+                               (cursor.empty() ? std::string() : "&cursor=" + encode(cursor.c_str()));
+      result = request(path.c_str());
+      if (result != SyncResult::Ok) return result;
+      JsonAllocator allocator;
+      JsonDocument doc(&allocator), filter(&allocator);
+      for (const char* key : {"id", "content", "description", "project_id", "parent_id", "responsible_uid", "priority",
+                              "checked", "is_deleted"})
+        filter["results"][0][key] = true;
+      filter["results"][0]["due"]["date"] = true;
+      filter["results"][0]["due"]["datetime"] = true;
+      filter["results"][0]["due"]["is_recurring"] = true;
+      filter["next_cursor"] = true;
+      if (!readJson(doc, filter) || !doc["results"].is<JsonArray>()) return SyncResult::InvalidData;
+      for (JsonObjectConst item : doc["results"].as<JsonArrayConst>()) {
+        const char* assignee = item["responsible_uid"] | "";
+        if ((item["checked"] | false) || (item["is_deleted"] | false) || (*assignee && strcmp(assignee, userId)))
+          continue;
+        const char* due = item["due"]["datetime"] | (item["due"]["date"] | "");
+        if (strcmp(item["project_id"] | "", project.id)) return SyncResult::InvalidData;
+        memset(task.get(), 0, sizeof(Task));
+        if (!copyText(task->id, sizeof(task->id), item["id"] | "") || !task->id[0] ||
+            !copyText(task->projectId, sizeof(task->projectId), project.id) ||
+            !copyText(task->parentId, sizeof(task->parentId), item["parent_id"] | "") ||
+            !copyText(task->title, sizeof(task->title), item["content"] | "") ||
+            !copyText(task->description, sizeof(task->description), item["description"] | "") ||
+            !copyText(task->due, sizeof(task->due), due) ||
+            !copyText(task->project, sizeof(task->project), project.name))
+          return SyncResult::Limit;
+        task->priority = item["priority"] | 1;
+        task->recurring = item["due"]["is_recurring"] | false;
+        if (!store.append(*task)) return SyncResult::Limit;
+      }
+      const char* next = doc["next_cursor"] | "";
+      if (!*next) {
+        finished = true;
+        break;
+      }
+      if (strlen(next) > 512 || cursor == next) return SyncResult::InvalidData;
+      cursor = next;
     }
-    const char* next = doc["next_cursor"] | "";
-    if (!*next) return store.commit(time(nullptr)) ? SyncResult::Ok : SyncResult::StorageError;
-    if (strlen(next) > 512 || cursor == next) return SyncResult::InvalidData;
-    cursor = next;
+    if (!finished) return SyncResult::Limit;
   }
-  return SyncResult::Limit;
+  return store.commit(time(nullptr)) ? SyncResult::Ok : SyncResult::StorageError;
 }
 SyncResult TodoistClient::sendPending(Pending& pending) {
   auto result = connect();

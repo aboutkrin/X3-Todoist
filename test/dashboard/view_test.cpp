@@ -10,16 +10,12 @@
 using namespace dashboard;
 const char* stubText(StrId id) {
   switch (id) {
-    case StrId::STR_DASH_MY_DAY:
-      return "My day";
-    case StrId::STR_DASH_TODAY:
-      return "Today";
-    case StrId::STR_DASH_OVERDUE:
-      return "Overdue";
-    case StrId::STR_DASH_UPCOMING:
-      return "Upcoming";
+    case StrId::STR_DASH_PROJECTS:
+      return "My projects";
+    case StrId::STR_DASH_NO_DUE_DATE:
+      return "No due date";
     case StrId::STR_DASH_MENU:
-      return "Dashboard menu";
+      return "Menu";
     case StrId::STR_DASH_NO_TASKS:
       return "No tasks";
     case StrId::STR_DASH_COMPLETE:
@@ -49,8 +45,13 @@ const char* stubText(StrId id) {
 int main(int argc, char** argv) {
   assert(argc == 2);
   std::filesystem::create_directories(argv[1]);
+  ProjectSelection projects;
+  projects.count = 3;
+  projects.projects[0] = Project{"p", "งานส่วนตัว 📚"};
+  projects.projects[1] = Project{"r", "Reading"};
+  projects.projects[2] = Project{"w", "Work"};
   Task tasks[4];
-  const char* titles[] = {"Review project proposal", "Buy groceries", "Read for 20 minutes", "Plan weekend trip"};
+  const char* titles[] = {"💼 ประชุมทีม", "🛒 ซื้อของ", "📚 อ่านหนังสือ", "🇹🇭 เที่ยวกับครอบครัว"};
   for (int i = 0; i < 4; ++i) {
     copyText(tasks[i].title, sizeof(tasks[i].title), titles[i]);
     copyText(tasks[i].project, sizeof(tasks[i].project), i == 0 ? "Work" : "Personal");
@@ -58,6 +59,12 @@ int main(int argc, char** argv) {
   for (int font = 0; font < 3; ++font)
     for (int screen = 0; screen < 5; ++screen) {
       View view;
+      view.projects = &projects;
+      view.projectCount = projects.count;
+      for (size_t i = 0; i < projects.count; ++i) {
+        view.projectOrder[i] = i;
+        view.available[i] = true;
+      }
       view.fontSize = font;
       view.screen = static_cast<Screen>(screen);
       view.detail = &tasks[0];
@@ -89,5 +96,27 @@ int main(int argc, char** argv) {
     view.detailOffset = view.nextDetailOffset;
     assert(++pages <= 64);
   }
-  std::cout << "Dashboard views: five screens at three font sizes fit 528x792; full long-text pagination passed\n";
+  // No spaces: line/page boundaries still cannot split a joined emoji sequence.
+  for (int font = 0; font < 3; ++font) {
+    for (const char* sequence : {"\U0001f469\U0001f3fd\u200d\U0001f4bb", "เก้า", "นํ้า", "ปู่"}) {
+      View joined;
+      joined.screen = Screen::Detail;
+      joined.fontSize = font;
+      const size_t unit = strlen(sequence);
+      const size_t length = (sizeof(joined.detailText) - 1) / unit * unit;
+      for (size_t i = 0; i < length; i += unit) memcpy(joined.detailText + i, sequence, unit);
+      joined.detailText[length] = 0;
+      size_t pageCount = 0;
+      while (joined.detailOffset < length) {
+        GfxRenderer emojiRenderer;
+        BaseTheme::drawDashboard(emojiRenderer, joined);
+        assert(emojiRenderer.blackPixels > 0);
+        assert(joined.nextDetailOffset > joined.detailOffset && joined.nextDetailOffset % unit == 0);
+        joined.detailOffset = joined.nextDetailOffset;
+        assert(++pageCount < 64);
+      }
+    }
+  }
+  std::cout << "Dashboard views: five screens at three font sizes fit 528x792; long text and joined-emoji pagination "
+               "passed\n";
 }

@@ -16,19 +16,28 @@ int main(int argc, char** argv) {
   t.tm_hour = 12;
   t.tm_isdst = -1;
   const auto now = mktime(&t);
+  ProjectSelection selection;
+  assert(selection.add(Project{"p", "Personal"}));
+  assert(selection.save());
   Task task{};
+  copyText(task.projectId, sizeof(task.projectId), "p");
   copyText(task.id, sizeof(task.id), "first");
   copyText(task.title, sizeof(task.title), "First task");
   copyText(task.due, sizeof(task.due), "2026-09-26");
   {
     Store store;
-    assert(store.begin());
+    assert(store.begin(selection));
     assert(!store.load(now));
     assert(store.startWrite());
     assert(store.append(task));
     assert(store.commit(now));
-    assert(store.count(Section::Today) == 1);
+    assert(store.count(0) == 1);
     assert(store.syncedAt() == now);
+    store.releaseIndex();
+    assert(store.hasCache());
+    assert(store.count(0) == 0);
+    assert(store.load(now));
+    assert(store.count(0) == 1);
     // Power loss in a later sync must retain the previous committed generation.
     assert(store.startWrite());
     copyText(task.id, sizeof(task.id), "interrupted");
@@ -36,13 +45,13 @@ int main(int argc, char** argv) {
   }
   {
     Store store;
-    assert(store.begin());
+    assert(store.begin(selection));
     assert(store.load(now));
-    assert(store.count(Section::Today) == 1);
-    assert(!strcmp(store.entry(Section::Today, 0)->id, "first"));
+    assert(store.count(0) == 1);
+    assert(!strcmp(store.entry(0, 0)->id, "first"));
     assert(store.startWrite());
     assert(store.commit(now + 1));
-    assert(store.count(Section::Today) == 0);
+    assert(store.count(0) == 0);
   }
   // Corrupt the newest generation: fall back to the last intact generation.
   {
@@ -51,16 +60,31 @@ int main(int argc, char** argv) {
   }
   {
     Store store;
-    assert(store.begin());
+    assert(store.begin(selection));
     assert(store.load(now));
-    assert(store.count(Section::Today) == 1);
+    assert(store.count(0) == 1);
     assert(store.load(now + 86400));
-    assert(store.count(Section::Overdue) == 1);
+    assert(store.count(0) == 1);
     assert(store.startWrite());
     for (size_t i = 0; i < MAX_TASKS; ++i) assert(store.append(task));
     assert(!store.append(task));
   }
   Config config;
+  // A reused generation with a different selected set must not accept an old snapshot.
+  assert(selection.add(Project{"q", "Work"}));
+  {
+    Store store;
+    assert(store.begin(selection));
+    assert(!store.load(now));
+    assert(!store.hasCache());
+  }
+  --selection.count;
+  ++selection.generation;
+  {
+    Store store;
+    assert(store.begin(selection));
+    assert(!store.load(now));
+  }
   assert(!config.load());
   assert(!config.save("token\r\nheader", 1));
   assert(!config.save("abc", 3));
@@ -70,14 +94,14 @@ int main(int argc, char** argv) {
   assert(loaded.fontSize == 2);
   {
     Store store;
-    assert(store.begin());
+    assert(store.begin(selection));
     assert(!store.load(now));  // The initial token cleared the old cache.
     assert(store.startWrite() && store.append(task) && store.commit(now));
     assert(config.save(config.token, 1));
     assert(store.load(now));  // Text size changes retain the cache.
     assert(config.save("another-account-token", 1));
     assert(!store.load(now));
-    assert(!store.hasCache() && store.count(Section::Today) == 0);
+    assert(!store.hasCache() && store.count(0) == 0);
   }
   Pending command;
   assert(!command.load());

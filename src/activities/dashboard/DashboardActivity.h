@@ -18,6 +18,8 @@ class DashboardActivity final : public Activity {
  private:
   dashboard::Store store;
   dashboard::Config config;
+  dashboard::ProjectSelection projects;
+  dashboard::ProjectCatalog catalog;
   dashboard::Pending pending;
   dashboard::View view;
   // Allocate once with the activity: four rendered records + one detail record.
@@ -26,6 +28,8 @@ class DashboardActivity final : public Activity {
   dashboard::Task detail;
   size_t detailOffsets[64]{};
   int detailPage = 0;
+  int overviewSelection = 0;
+  int listSelection = 0;
   GfxRenderer::Orientation previousOrientation = GfxRenderer::Portrait;
   unsigned long lastInput = 0;
   unsigned long lastAttempt = 0;
@@ -34,6 +38,7 @@ class DashboardActivity final : public Activity {
   bool setupAfterWifi = false;
   void refresh(bool complete = false);
   void updateView();
+  void updateProjects();
   void connectWifi(bool setup);
   void status(dashboard::SyncResult result);
   void menuAction();

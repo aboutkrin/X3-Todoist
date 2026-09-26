@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+inline unsigned long esp_random() { return 123456; }
 inline void esp_fill_random(void* out, size_t size) {
   static uint8_t sequence = 0;
   auto* bytes = static_cast<uint8_t*>(out);
