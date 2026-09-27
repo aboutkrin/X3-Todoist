@@ -75,6 +75,12 @@ void BaseTheme::drawDashboard(GfxRenderer& r, dashboard::View& view) {
   char battery[12];
   snprintf(battery, sizeof(battery), "%u%%", powerManager.getBatteryPercentage());
   r.drawText(UI_12_FONT_ID, x + width - r.getTextWidth(UI_12_FONT_ID, battery), top, battery);
+  if (view.sleeping) {
+    const char* sleeping = tr(STR_SLEEPING);
+    r.drawText(UI_12_FONT_ID, x + width - r.getTextWidth(UI_12_FONT_ID, battery) -
+                                  r.getTextWidth(UI_12_FONT_ID, sleeping) - pad,
+               top, sleeping);
+  }
   const int titleY = top + smallHeight + metrics.verticalSpacing;
   const char* title = view.screen == Screen::Overview                     ? tr(STR_DASH_PROJECTS)
                       : view.screen == Screen::Menu                       ? tr(STR_DASH_MENU)

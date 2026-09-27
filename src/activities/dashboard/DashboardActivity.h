@@ -6,14 +6,19 @@
 
 class DashboardActivity final : public Activity {
  public:
-  DashboardActivity(GfxRenderer& renderer, MappedInputManager& input) : Activity("Dashboard", renderer, input) {}
+  DashboardActivity(GfxRenderer& renderer, MappedInputManager& input, bool resumeFromSleep = false,
+                    bool cleanInitialRefresh = false)
+      : Activity("Dashboard", renderer, input),
+        resumeFromSleep(resumeFromSleep),
+        cleanInitialRefresh(cleanInitialRefresh) {}
   void onEnter() override;
   void onExit() override;
   void loop() override;
   void render(RenderLock&&) override;
   bool isHomeActivity() const override { return true; }
   bool preventAutoSleep() override { return true; }
-  uint32_t scheduledWakeSeconds() const override;
+  bool preservesSleepFrame() const override { return true; }
+  void prepareForSleep() override;
 
  private:
   dashboard::Store store;
@@ -32,10 +37,14 @@ class DashboardActivity final : public Activity {
   int listSelection = 0;
   GfxRenderer::Orientation previousOrientation = GfxRenderer::Portrait;
   unsigned long lastInput = 0;
-  unsigned long lastAttempt = 0;
   bool ready = false;
-  bool initialSync = true;
+  bool syncRequested = false;
+  bool resumeFromSleep = false;
+  bool cleanInitialRefresh = false;
+  bool powerReleasedSinceWake = false;
   bool setupAfterWifi = false;
+  void restorePosition();
+  void sleep(bool fromTimeout);
   void refresh(bool complete = false);
   void updateView();
   void updateProjects();

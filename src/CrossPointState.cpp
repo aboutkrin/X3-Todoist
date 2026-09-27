@@ -1,6 +1,7 @@
 #include "CrossPointState.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 
 namespace {
@@ -53,6 +54,13 @@ void CrossPointState::toJson(JsonDocument& doc) const {
   doc["readerActivityLoadCount"] = readerActivityLoadCount;
   doc["lastSleepFromReader"] = lastSleepFromReader;
   doc["showBootScreen"] = showBootScreen;
+  doc["dashboardScreen"] = dashboardScreen;
+  doc["dashboardSelection"] = dashboardSelection;
+  doc["dashboardOverviewSelection"] = dashboardOverviewSelection;
+  doc["dashboardListSelection"] = dashboardListSelection;
+  doc["dashboardDetailOffset"] = dashboardDetailOffset;
+  doc["dashboardProjectId"] = dashboardProjectId;
+  doc["dashboardTaskId"] = dashboardTaskId;
 }
 
 bool CrossPointState::fromJson(JsonVariantConst doc) {
@@ -90,5 +98,12 @@ bool CrossPointState::fromJson(JsonVariantConst doc) {
   readerActivityLoadCount = doc["readerActivityLoadCount"] | static_cast<uint8_t>(0);
   lastSleepFromReader = doc["lastSleepFromReader"] | false;
   showBootScreen = doc["showBootScreen"] | true;
+  dashboardScreen = doc["dashboardScreen"] | static_cast<uint8_t>(0);
+  dashboardSelection = doc["dashboardSelection"] | 0;
+  dashboardOverviewSelection = doc["dashboardOverviewSelection"] | 0;
+  dashboardListSelection = doc["dashboardListSelection"] | 0;
+  dashboardDetailOffset = doc["dashboardDetailOffset"] | static_cast<uint16_t>(0);
+  snprintf(dashboardProjectId, sizeof(dashboardProjectId), "%s", doc["dashboardProjectId"] | "");
+  snprintf(dashboardTaskId, sizeof(dashboardTaskId), "%s", doc["dashboardTaskId"] | "");
   return true;
 }

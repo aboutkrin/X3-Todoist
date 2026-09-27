@@ -20,6 +20,7 @@ struct View {
   size_t detailOffset = 0;
   size_t nextDetailOffset = 0;
   uint8_t fontSize = 1;
+  bool sleeping = false;
   char date[32]{};
   char status[160]{};
   char detailText[2300]{};

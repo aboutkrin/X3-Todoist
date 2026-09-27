@@ -323,15 +323,17 @@ void ActivityManager::goToFullScreenMessage(std::string message, EpdFontFamily::
   replaceActivity(std::make_unique<FullScreenMessageActivity>(renderer, mappedInput, std::move(message), style));
 }
 
-void ActivityManager::goHome(HomeMenuItem initialMenuItem, bool cleanInitialRefresh) {
+void ActivityManager::goHome(HomeMenuItem initialMenuItem, bool cleanInitialRefresh, bool resumeDashboard) {
 #ifdef X3_TODOIST_DASHBOARD
-  auto dashboard = makeUniqueNoThrow<DashboardActivity>(renderer, mappedInput);
+  auto dashboard = makeUniqueNoThrow<DashboardActivity>(renderer, mappedInput, resumeDashboard, cleanInitialRefresh);
   if (!dashboard) {
     LOG_ERR("DASH", "Dashboard activity allocation failed");
     return;
   }
   replaceActivity(std::move(dashboard));
   return;
+#else
+  (void)resumeDashboard;
 #endif
   if (initialMenuItem == HomeMenuItem::NONE && currentActivity) {
     const auto& activityName = currentActivity->name;
@@ -377,6 +379,12 @@ uint32_t ActivityManager::scheduledWakeSeconds() const {
 }
 
 bool ActivityManager::preventAutoSleep() const { return currentActivity && currentActivity->preventAutoSleep(); }
+
+bool ActivityManager::preservesSleepFrame() const { return currentActivity && currentActivity->preservesSleepFrame(); }
+
+void ActivityManager::prepareForSleep() {
+  if (currentActivity) currentActivity->prepareForSleep();
+}
 
 bool ActivityManager::requiresExclusiveStorageLoop() const {
   return currentActivity && currentActivity->requiresExclusiveStorageLoop();

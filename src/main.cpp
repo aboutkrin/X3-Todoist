@@ -262,6 +262,8 @@ static bool loadSleepFrameBuffer() {
 void enterDeepSleep(bool fromTimeout = false) {
   HalPowerManager::Lock powerLock;  // Ensure we are at normal CPU frequency for sleep preparation
   APP_STATE.lastSleepFromReader = activityManager.isReaderActivity();
+  const bool preserveCurrentFrame = activityManager.preservesSleepFrame();
+  activityManager.prepareForSleep();
 
   const bool isQuickResumeSleep =
       SETTINGS.sleepScreen == CrossPointSettings::SLEEP_SCREEN_MODE::QUICK_RESUME ||
@@ -277,10 +279,10 @@ void enterDeepSleep(bool fromTimeout = false) {
   // a WiFi activity would otherwise silentRestart() here and reboot instead.
   deepSleepInProgress = true;
   const uint32_t scheduledWake = activityManager.scheduledWakeSeconds();
-  // Keep the useful task list on the e-paper panel during dashboard sleep.
-  if (scheduledWake == 0) activityManager.goToSleep(fromTimeout);
+  // Activities that preserve their current frame have already painted it.
+  if (scheduledWake == 0 && !preserveCurrentFrame) activityManager.goToSleep(fromTimeout);
 
-  if (isQuickResumeSleep) {
+  if (isQuickResumeSleep || preserveCurrentFrame) {
     saveSleepFrameBuffer();
   } else if (Storage.exists(SLEEP_FRAME_FILE)) {
     // A stale Quick Resume frame must not replace the selected sleep screen during wake.
@@ -454,7 +456,11 @@ void setup() {
     case HalGPIO::WakeupReason::PowerButton:
       // With Short Power Button Press = Sleep, a single click wakes on any
       // device; otherwise the button must still be held (ghost-wake debounce).
-      if (!wakeHoldVerified && SETTINGS.shortPwrBtn != CrossPointSettings::SHORT_PWRBTN::SLEEP) {
+      if (!wakeHoldVerified && SETTINGS.shortPwrBtn != CrossPointSettings::SHORT_PWRBTN::SLEEP
+#ifdef X3_TODOIST_DASHBOARD
+          && !gpio.deviceIsX3()
+#endif
+      ) {
         LOG_DBG("MAIN", "Power-button wake not held through verification, sleeping");
         Storage.prepareForDeepSleep();
         powerManager.startDeepSleep(gpio);
@@ -540,7 +546,7 @@ void setup() {
     activityManager.goToCrashReport();
 #ifdef X3_TODOIST_DASHBOARD
   } else if (true) {
-    activityManager.goHome();
+    activityManager.goHome(HomeMenuItem::NONE, needsWakeRefresh, isPersistedSleepWake);
 #endif
   } else if (resume == BootResume::Silent && snapshotTarget == SILENT_REBOOT_TARGET_READER &&
              !APP_STATE.openEpubPath.empty()) {
@@ -745,7 +751,8 @@ void loop() {
                                         SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::SLEEP &&
                                         gpio.getPowerButtonHeldTime() <= X4PRO_POWER_CLICK_MAX_HOLD_MS;
 
-  if (!x4ProAwaitingClickWindow && powerReleasedSinceWake && millis() >= allowSleepAt &&
+  if (!x4ProAwaitingClickWindow && !activityManager.preservesSleepFrame() && powerReleasedSinceWake &&
+      millis() >= allowSleepAt &&
       gpio.isPressed(HalGPIO::BTN_POWER) && gpio.getPowerButtonHeldTime() > SETTINGS.getPowerButtonDuration()) {
     // If the screenshot combination is potentially being pressed, don't sleep
     if (gpio.isPressed(HalGPIO::BTN_DOWN)) {

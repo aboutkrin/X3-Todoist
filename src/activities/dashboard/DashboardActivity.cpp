@@ -5,12 +5,12 @@
 #include <I18n.h>
 #include <Memory.h>
 #include <WiFi.h>
-#include <esp_sleep.h>
 #include <sys/time.h>
 
 #include <algorithm>
 
 #include "CrossPointSettings.h"
+#include "CrossPointState.h"
 #include "DashboardSetupActivity.h"
 #include "activities/network/WifiSelectionActivity.h"
 #include "components/UITheme.h"
@@ -51,6 +51,7 @@ void DashboardActivity::onEnter() {
   status(ready ? configured ? dashboard::SyncResult::Ok : dashboard::SyncResult::NotConfigured
                : dashboard::SyncResult::StorageError);
   if (configured && !projects.count) status(dashboard::SyncResult::ChooseProjects);
+  if (resumeFromSleep) restorePosition();
   updateView();
   requestUpdate();
 }
@@ -59,11 +60,76 @@ void DashboardActivity::onExit() {
   renderer.setOrientation(previousOrientation);
   Activity::onExit();
 }
-uint32_t DashboardActivity::scheduledWakeSeconds() const {
-  if (!config.configured() || !ready || !projects.count) return 0;
-  const unsigned long elapsed = millis() - lastAttempt;
-  return std::max<uint32_t>(
-      1, dashboard::REFRESH_SECONDS - std::min<unsigned long>(dashboard::REFRESH_SECONDS - 1, elapsed / 1000));
+void DashboardActivity::prepareForSleep() {
+  APP_STATE.dashboardScreen = static_cast<uint8_t>(view.screen);
+  APP_STATE.dashboardSelection = view.selection;
+  APP_STATE.dashboardOverviewSelection = overviewSelection;
+  APP_STATE.dashboardListSelection = listSelection;
+  APP_STATE.dashboardDetailOffset = static_cast<uint16_t>(view.detailOffset);
+  APP_STATE.dashboardProjectId[0] = 0;
+  APP_STATE.dashboardTaskId[0] = 0;
+  if (view.project < projects.count)
+    snprintf(APP_STATE.dashboardProjectId, sizeof(APP_STATE.dashboardProjectId), "%s", projects.projects[view.project].id);
+  const char* taskId = nullptr;
+  if (view.screen == dashboard::Screen::Detail || view.screen == dashboard::Screen::Confirm)
+    taskId = detail.id;
+  else if (view.screen == dashboard::Screen::List) {
+    const auto* entry = store.entry(view.project, view.selection);
+    if (entry) taskId = entry->id;
+  }
+  if (taskId) snprintf(APP_STATE.dashboardTaskId, sizeof(APP_STATE.dashboardTaskId), "%s", taskId);
+}
+
+void DashboardActivity::restorePosition() {
+  using dashboard::Screen;
+  overviewSelection = APP_STATE.dashboardOverviewSelection;
+  listSelection = APP_STATE.dashboardListSelection;
+  const uint8_t savedScreen = APP_STATE.dashboardScreen;
+  if (savedScreen > static_cast<uint8_t>(Screen::Menu)) return;
+  view.screen = static_cast<Screen>(savedScreen);
+  view.selection = APP_STATE.dashboardSelection;
+  if (view.screen == Screen::Overview) return;
+  if (view.screen == Screen::Menu) {
+    view.selection = std::clamp(view.selection, 0, 5);
+    return;
+  }
+
+  const int project = projects.find(APP_STATE.dashboardProjectId);
+  if (project < 0) {
+    view.screen = Screen::Overview;
+    view.selection = overviewSelection;
+    return;
+  }
+  view.project = static_cast<size_t>(project);
+  const size_t count = store.count(view.project);
+  for (size_t i = 0; i < count; ++i) {
+    const auto* entry = store.entry(view.project, i);
+    if (entry && strcmp(entry->id, APP_STATE.dashboardTaskId) == 0) {
+      if (view.screen == Screen::List) view.selection = static_cast<int>(i);
+      else listSelection = static_cast<int>(i);
+      if (view.screen == Screen::Detail || view.screen == Screen::Confirm) {
+        if (!store.read(entry->record, detail)) break;
+        snprintf(view.detailText, sizeof(view.detailText), "%s\n\n%s\n%s\n\n%s", detail.title, detail.project,
+                 detail.due[0] ? detail.due : tr(STR_DASH_NO_DUE_DATE), detail.description);
+        view.detailOffset = detailOffsets[0] = std::min<size_t>(APP_STATE.dashboardDetailOffset, strlen(view.detailText));
+      }
+      return;
+    }
+  }
+  if (view.screen != Screen::List) {
+    view.screen = Screen::List;
+    view.selection = listSelection;
+  }
+}
+
+void DashboardActivity::sleep(bool fromTimeout) {
+  {
+    RenderLock lock;
+    view.sleeping = true;
+    updateView();
+  }
+  requestUpdateAndWait();
+  enterDeepSleep(fromTimeout);
 }
 void DashboardActivity::status(dashboard::SyncResult result) {
   using dashboard::SyncResult;
@@ -161,7 +227,6 @@ void DashboardActivity::refresh(bool complete) {
   if (!projects.count) {
     RenderLock lock;
     status(dashboard::SyncResult::ChooseProjects);
-    lastAttempt = millis();
     requestUpdate();
     return;
   }
@@ -185,7 +250,6 @@ void DashboardActivity::refresh(bool complete) {
     updateProjects();
     LOG_INF("DASH", "Sync result %u, heap: %u, minimum since boot: %u", static_cast<unsigned>(result),
             ESP.getFreeHeap(), ESP.getMinFreeHeap());
-    lastAttempt = millis();
     status(result);
     if (pending.exists()) status(dashboard::SyncResult::Pending);
     if (complete && result == dashboard::SyncResult::Ok) {
@@ -241,18 +305,18 @@ void DashboardActivity::connectWifi(bool setup) {
         view.screen = dashboard::Screen::Overview;
         view.selection = 0;
         updateView();
-        initialSync = true;
+        syncRequested = true;
         lastInput = millis();
       });
     } else
-      initialSync = true;
+      syncRequested = true;
   });
 }
 void DashboardActivity::menuAction() {
   switch (view.selection) {
     case 0: {
       RenderLock lock;
-      initialSync = true;
+      syncRequested = true;
       view.screen = dashboard::Screen::Overview;
       view.selection = 0;
       updateView();
@@ -275,47 +339,26 @@ void DashboardActivity::menuAction() {
       activityManager.goToSettings();
       break;
     case 5: {
-      LOG_INF("DASH", "Sleep menu requested");
-      {
-        RenderLock lock;
-        view.screen = dashboard::Screen::Overview;
-        view.selection = overviewSelection;
-        snprintf(view.status, sizeof(view.status), "%s", tr(STR_SLEEPING));
-        updateView();
-      }
-      requestUpdateAndWait();
-      LOG_INF("DASH", "Sleep frame ready; entering deep sleep");
-      enterDeepSleep(false);
+      sleep(false);
       break;
     }
   }
 }
 void DashboardActivity::loop() {
   using namespace dashboard;
-  if (initialSync && ready && config.configured()) {
-    initialSync = false;
-    refresh();
-    // A scheduled wake only fetches and repaints; no minute of awake idle time.
-    if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER && millis() - lastInput > 1000) {
-      requestUpdateAndWait();
-      enterDeepSleep(true);
-    }
-    return;
+  if (!mappedInput.isPressed(MappedInputManager::Button::Power)) powerReleasedSinceWake = true;
+  if (powerReleasedSinceWake && mappedInput.wasLongPressed(MappedInputManager::Button::Power, 1000)) {
+    lastInput = millis();
+    syncRequested = true;
   }
-  if (ready && config.configured() && projects.count && millis() - lastAttempt >= REFRESH_SECONDS * 1000UL) {
+  if (syncRequested && ready && config.configured()) {
+    syncRequested = false;
     refresh();
     return;
   }
   if (mappedInput.wasAnyPressed()) lastInput = millis();
   if (millis() - lastInput >= IDLE_MS && config.configured()) {
-    {
-      RenderLock lock;
-      view.screen = Screen::Overview;
-      view.selection = 0;
-      updateView();
-    }
-    requestUpdateAndWait();
-    enterDeepSleep(true);
+    sleep(true);
     return;
   }
   bool changed = false;
@@ -411,5 +454,7 @@ void DashboardActivity::render(RenderLock&&) {
                             view.screen == dashboard::Screen::Detail ? tr(STR_DASH_COMPLETE) : tr(STR_SELECT),
                             tr(STR_DASH_PREVIOUS), tr(STR_DASH_NEXT));
   GUI.drawButtonHints(renderer, hints.btn1, hints.btn2, hints.btn3, hints.btn4);
-  renderer.displayBuffer(HalDisplay::RefreshMode::FAST_REFRESH);
+  renderer.displayBuffer(cleanInitialRefresh ? HalDisplay::RefreshMode::HALF_REFRESH
+                                             : HalDisplay::RefreshMode::FAST_REFRESH);
+  cleanInitialRefresh = false;
 }

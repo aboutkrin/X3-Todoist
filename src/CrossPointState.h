@@ -23,6 +23,13 @@ class CrossPointState : public PersistableStore<CrossPointState> {
   uint8_t readerActivityLoadCount = 0;
   bool lastSleepFromReader = false;
   bool showBootScreen = true;
+  uint8_t dashboardScreen = 0;
+  int dashboardSelection = 0;
+  int dashboardOverviewSelection = 0;
+  int dashboardListSelection = 0;
+  uint16_t dashboardDetailOffset = 0;
+  char dashboardProjectId[64]{};
+  char dashboardTaskId[64]{};
 
   static const char* getFilePath() { return "/.crosspoint/state.json"; }
   void toJson(JsonDocument& doc) const;

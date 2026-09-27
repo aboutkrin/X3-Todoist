@@ -128,13 +128,12 @@ existing installation until its backup and partition layout have been checked.
   Back from task details restores the task's highlight and list page. Cancelling
   the completion prompt also retains this return position. Navigation positions
   stay in memory only and are clamped if the list size changes.
-- **Sleep now** paints the project overview with a **SLEEPING** status and waits
-  for the display refresh before entering deep sleep. The retained image is normal
-  for e-paper; use the power button to wake. This action does not open settings.
+- **Sleep now** and the 60-second idle timeout leave the current dashboard view
+  visible with a small **SLEEPING** label. A short power-button press wakes to the
+  same view and selection. Hold power for one second while awake to sync Todoist.
 - Direct HTTPS requests to Todoist API v1, with certificate verification.
-- Refresh every 15 minutes. After 60 seconds idle, keep the overview visible on
-  e-paper and request a timed deep-sleep wake. Timer wake on battery still needs
-  validation on the actual X3 hardware revision.
+- Sync with the power-button hold or **Menu > Refresh now**. The dashboard does
+  not wake itself or sync on startup.
 - Retain the last complete cache on network, parsing or SD errors. An offline
   task completion is refused. If a completion response is lost, persist and
   resend the same command UUID; block further completions until reconciled.
@@ -244,10 +243,9 @@ host test or firmware build.
    a successful repeated sync without decreasing retained heap or allocation
    failures; record the minimum heap and largest allocatable block.
    Inspect stack high-water marks if a crash or low-stack warning occurs.
-7. Verify a 15-minute automatic refresh both on USB and on battery; verify the
-   power button wakes the device and measure sleeping battery drain. Timer wake
-   currently keeps the X3 power latch asserted, so its electrical behavior must
-   be confirmed rather than inferred from compilation.
+7. Let the dashboard idle from each view, confirm the small sleeping label and
+   retained selection, then wake with a short power-button press. Hold power for
+   one second while awake and confirm one sync. Measure sleeping battery drain.
 
 The original TRMNL installation has a verified full-flash backup retained locally.
 
