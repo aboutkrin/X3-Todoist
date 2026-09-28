@@ -35,6 +35,8 @@ class Store {
   bool read(uint16_t record, Task& task) const;
   const IndexEntry* entry(size_t project, size_t offset) const;
   size_t count(size_t project) const;
+  const IndexEntry* todayEntry(size_t offset) const;
+  size_t todayCount() const;
   time_t syncedAt() const { return header.syncedAt; }
   bool hasCache() const { return activeSlot >= 0; }
 
@@ -55,9 +57,11 @@ class Store {
 };
 struct Config {
   char token[129]{};
+  char inboxId[64]{};
   uint8_t fontSize = 1;
   bool load();
   bool save(const char* newToken, uint8_t font);
+  bool saveInboxId(const char* id);
   bool configured() const { return token[0] != '\0'; }
 };
 struct Pending {

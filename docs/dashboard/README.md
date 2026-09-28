@@ -106,12 +106,18 @@ existing installation until its backup and partition layout have been checked.
 ## Behavior
 
 - Select 1–16 Todoist projects through the X3's local web setup.
-- Portrait **My projects** overview, alphabetically ordered, four projects per page,
-  with task counts and a first-task preview. Deleted projects show as unavailable.
+- Portrait **My projects** overview with Today first, selected Inbox second, then
+  other selected projects alphabetically. Eight entries appear at the smallest
+  text size, or six at the other sizes, with task
+  counts and a first-task preview. Deleted projects show as unavailable.
+- Today includes due and overdue tasks from all Todoist projects at the last sync.
+  Tasks in unselected projects that become due later appear after the next refresh.
 - Includes undated and future tasks in selected projects. Excludes completed/deleted
   tasks and tasks assigned to another person. Lists sort by due date, then priority;
   undated tasks follow dated tasks.
-- Three text sizes, four tasks per list page, and paginated full task details.
+- Three text sizes, eight tasks per list page at the smallest size or six at the
+  other sizes, and paginated full task details. The [compact layout image](compact-today-proposal.png)
+  shows the target density.
 - Thai project names, task titles and details, including vowels/tone marks and
   mixed Thai/English/emoji text. Menus remain in English. Thai wraps at glyph
   cluster boundaries. See [Thai font sources](../../src/dashboard/thai/README.md).

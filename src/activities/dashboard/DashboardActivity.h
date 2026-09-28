@@ -27,9 +27,8 @@ class DashboardActivity final : public Activity {
   dashboard::ProjectCatalog catalog;
   dashboard::Pending pending;
   dashboard::View view;
-  // Allocate once with the activity: four rendered records + one detail record.
-  // Never put these ~12KB of text on a FreeRTOS stack or retain the full feed.
-  dashboard::Task page[4];
+  // Row summaries omit descriptions and IDs; the detail record is reused for SD reads.
+  dashboard::Row page[dashboard::MAX_VISIBLE_ROWS];
   dashboard::Task detail;
   size_t detailOffsets[64]{};
   int detailPage = 0;

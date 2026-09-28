@@ -68,6 +68,7 @@ void BaseTheme::drawDashboard(GfxRenderer& r, dashboard::View& view) {
   const int bodyFont = BODY_FONTS[std::min<uint8_t>(view.fontSize, 2)];
   const int bodyHeight = r.getLineHeight(bodyFont);
   const int smallHeight = r.getLineHeight(UI_12_FONT_ID);
+  const int rowCount = rowsPerPage(view.fontSize);
   const int top = safe.y + metrics.topPadding;
   const int footer = safe.y + safe.height - smallHeight * 2;
   r.clearScreen();
@@ -84,52 +85,57 @@ void BaseTheme::drawDashboard(GfxRenderer& r, dashboard::View& view) {
   const int titleY = top + smallHeight + metrics.verticalSpacing;
   const char* title = view.screen == Screen::Overview                     ? tr(STR_DASH_PROJECTS)
                       : view.screen == Screen::Menu                       ? tr(STR_DASH_MENU)
+                      : view.todayList                                     ? tr(STR_DASH_TODAY)
                       : view.projects && view.project < view.projectCount ? view.projects->projects[view.project].name
                                                                           : tr(STR_DASH_PROJECTS);
-  lines(r, NOTOSANS_18_FONT_ID, Rect{x, titleY, width, r.getLineHeight(NOTOSANS_18_FONT_ID)}, title, 0, 1, true, true);
-  const int contentY = titleY + r.getLineHeight(NOTOSANS_18_FONT_ID) + metrics.verticalSpacing * 2;
+  const int titleFont = view.screen == Screen::Overview || view.screen == Screen::List ? NOTOSANS_16_FONT_ID
+                                                                                       : NOTOSANS_18_FONT_ID;
+  const int titleHeight = r.getLineHeight(titleFont);
+  lines(r, titleFont, Rect{x, titleY, width, titleHeight}, title, 0, 1, true, true);
+  const int contentY = titleY + titleHeight + metrics.verticalSpacing * 2;
   const int contentHeight = footer - contentY - metrics.verticalSpacing;
   const size_t project = view.project;
   if (view.screen == Screen::Overview) {
-    const int step = contentHeight / 4;
-    if (!view.projectCount)
-      lines(r, bodyFont, Rect{x, contentY, width, contentHeight}, tr(STR_DASH_CHOOSE_PROJECTS), 0, 4);
-    for (int i = 0; i < 4 && view.pageStart + i < view.projectCount; ++i) {
-      const size_t index = view.projectOrder[view.pageStart + i];
+    const int step = contentHeight / rowCount;
+    for (int i = 0; i < rowCount && view.pageStart + i <= view.projectCount; ++i) {
+      const size_t position = view.pageStart + i;
+      const bool today = position == 0;
+      const size_t index = today ? 0 : view.projectOrder[position - 1];
       const int y = contentY + i * step;
       r.drawLine(x, y, x + width, y);
-      if (view.selection == static_cast<int>(view.pageStart) + i)
-        r.fillRect(x, y + metrics.verticalSpacing, 4, step - metrics.verticalSpacing * 2);
-      lines(r, bodyFont, Rect{x + 16, y + metrics.verticalSpacing, width - 70, bodyHeight},
-            view.projects->projects[index].name, 0, 1, true, true);
+      if (view.selection == static_cast<int>(view.pageStart) + i) r.fillRect(x, y + 4, 4, step - 8);
+      lines(r, bodyFont, Rect{x + 16, y + 2, width - 70, bodyHeight},
+            today ? tr(STR_DASH_TODAY) : view.projects->projects[index].name, 0, 1, true, true);
       char count[12];
-      snprintf(count, sizeof(count), "%d", view.count[index]);
-      r.drawText(bodyFont, x + width - r.getTextWidth(bodyFont, count), y + metrics.verticalSpacing, count);
-      lines(r, bodyFont,
-            Rect{x + 16, y + bodyHeight + metrics.verticalSpacing * 2, width - 16,
-                 step - bodyHeight - metrics.verticalSpacing * 2},
-            !view.available[index] ? tr(STR_DASH_PROJECT_UNAVAILABLE)
+      snprintf(count, sizeof(count), "%d", today ? static_cast<int>(view.todayCount) : view.count[index]);
+      r.drawText(bodyFont, x + width - r.getTextWidth(bodyFont, count), y + 2, count);
+      lines(r, UI_12_FONT_ID, Rect{x + 16, y + step - smallHeight - 2, width - 16, smallHeight},
+            !today && !view.available[index] ? tr(STR_DASH_PROJECT_UNAVAILABLE)
             : view.rows[i]         ? view.rows[i]->title
                                    : tr(STR_DASH_NO_TASKS),
-            0, 2);
+            0, 1);
     }
   } else if (view.screen == Screen::List) {
-    const int step = contentHeight / 4;
-    if (!view.count[project])
+    const int step = contentHeight / rowCount;
+    if (!(view.todayList ? view.todayCount : view.count[project]))
       lines(r, bodyFont, Rect{x, contentY, width, contentHeight},
-            view.available[project] ? tr(STR_DASH_NO_TASKS) : tr(STR_DASH_PROJECT_UNAVAILABLE), 0, 2);
-    for (int i = 0; i < 4 && view.rows[i]; ++i) {
+            view.todayList || view.available[project] ? tr(STR_DASH_NO_TASKS) : tr(STR_DASH_PROJECT_UNAVAILABLE), 0, 2);
+    for (int i = 0; i < rowCount && view.rows[i]; ++i) {
       const int y = contentY + i * step;
       const bool selected = view.selection == static_cast<int>(view.pageStart) + i;
       if (selected)
         r.fillRect(x, y, width, step);
       else
         r.drawLine(x, y, x + width, y);
-      r.drawRect(x + 8, y + 14, 18, 18, !selected);
-      lines(r, bodyFont, Rect{x + 38, y + 8, width - 46, step - smallHeight - 12}, view.rows[i]->title, 0, 2, !selected,
-            true);
-      lines(r, UI_12_FONT_ID, Rect{x + 38, y + step - smallHeight - 6, width - 46, smallHeight},
-            view.rows[i]->due[0] ? view.rows[i]->due : tr(STR_DASH_NO_DUE_DATE), 0, 1, !selected);
+      r.drawRect(x + 8, y + 9, 18, 18, !selected);
+      lines(r, bodyFont, Rect{x + 38, y + 2, width - 46, bodyHeight}, view.rows[i]->title, 0, 1, !selected, true);
+      char metadata[192];
+      if (view.todayList)
+        snprintf(metadata, sizeof(metadata), "%s - %s", view.rows[i]->project, view.rows[i]->due);
+      else
+        snprintf(metadata, sizeof(metadata), "%s", view.rows[i]->due[0] ? view.rows[i]->due : tr(STR_DASH_NO_DUE_DATE));
+      lines(r, UI_12_FONT_ID, Rect{x + 38, y + step - smallHeight - 2, width - 46, smallHeight}, metadata, 0, 1,
+            !selected);
     }
   } else if (view.screen == Screen::Detail) {
     view.nextDetailOffset = lines(r, bodyFont, Rect{x, contentY, width, contentHeight}, view.detailText,

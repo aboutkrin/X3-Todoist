@@ -81,6 +81,19 @@ int main(int argc, char** argv) {
     assert(store.syncedAt() == previousSync && store.count(0) == previousCount);
     store.finishWrite();
   }
+  {
+    Store store;
+    assert(store.begin(selection) && store.load(now));
+    assert(store.startWrite() && store.append(task));
+    copyText(task.projectId, sizeof(task.projectId), "outside");
+    copyText(task.id, sizeof(task.id), "outside-today");
+    assert(store.append(task) && store.commit(now));
+    assert(store.count(0) == 1 && store.todayCount() == 2);
+    assert(store.load(now + 86400));
+    assert(store.todayCount() == 2);
+    assert(store.todayEntry(0) && store.todayEntry(1));
+    copyText(task.projectId, sizeof(task.projectId), "p");
+  }
   Config config;
   // A reused generation with a different selected set must not accept an old snapshot.
   assert(selection.add(Project{"q", "Work"}));

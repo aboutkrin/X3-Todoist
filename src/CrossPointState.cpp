@@ -58,6 +58,7 @@ void CrossPointState::toJson(JsonDocument& doc) const {
   doc["dashboardSelection"] = dashboardSelection;
   doc["dashboardOverviewSelection"] = dashboardOverviewSelection;
   doc["dashboardListSelection"] = dashboardListSelection;
+  doc["dashboardTodayList"] = dashboardTodayList;
   doc["dashboardDetailOffset"] = dashboardDetailOffset;
   doc["dashboardProjectId"] = dashboardProjectId;
   doc["dashboardTaskId"] = dashboardTaskId;
@@ -102,6 +103,7 @@ bool CrossPointState::fromJson(JsonVariantConst doc) {
   dashboardSelection = doc["dashboardSelection"] | 0;
   dashboardOverviewSelection = doc["dashboardOverviewSelection"] | 0;
   dashboardListSelection = doc["dashboardListSelection"] | 0;
+  dashboardTodayList = doc["dashboardTodayList"] | false;
   dashboardDetailOffset = doc["dashboardDetailOffset"] | static_cast<uint16_t>(0);
   snprintf(dashboardProjectId, sizeof(dashboardProjectId), "%s", doc["dashboardProjectId"] | "");
   snprintf(dashboardTaskId, sizeof(dashboardTaskId), "%s", doc["dashboardTaskId"] | "");

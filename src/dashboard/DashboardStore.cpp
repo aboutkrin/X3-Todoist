@@ -37,13 +37,14 @@ bool Store::verify(int slot, CacheHeader& result) {
         !memchr(scratch->project, 0, sizeof(scratch->project)) || !memchr(scratch->due, 0, sizeof(scratch->due)) ||
         !memchr(scratch->description, 0, sizeof(scratch->description)) ||
         !memchr(scratch->parentId, 0, sizeof(scratch->parentId)) ||
-        !memchr(scratch->projectId, 0, sizeof(scratch->projectId)) || selection->find(scratch->projectId) < 0)
+        !memchr(scratch->projectId, 0, sizeof(scratch->projectId)) ||
+        (selection->find(scratch->projectId) < 0 && classify(scratch->due, result.syncedAt) != Section::Today &&
+         classify(scratch->due, result.syncedAt) != Section::Overdue))
       return false;
   }
   return (crc ^ 0xffffffffu) == result.crc;
 }
 bool Store::load(time_t now) {
-  (void)now;
   if (!scratch) return false;
   CacheHeader a, b;
   const bool hasA = verify(0, a), hasB = verify(1, b);
@@ -71,11 +72,10 @@ bool Store::load(time_t now) {
   for (uint16_t i = 0; i < header.count; ++i) {
     if (!read(i, *scratch)) return false;
     const int project = selection->find(scratch->projectId);
-    if (project < 0) continue;
     auto& item = index[visibleCount++];
     item.record = i;
-    item.section = Section::Today;
-    item.projectIndex = project;
+    item.section = classify(scratch->due, now);
+    item.projectIndex = project < 0 ? MAX_PROJECTS : project;
     item.priority = scratch->priority;
     copyText(item.id, sizeof(item.id), scratch->id);
     int day = 0;
@@ -138,15 +138,28 @@ const IndexEntry* Store::entry(size_t project, size_t offset) const {
     if (index[i].projectIndex == project && offset-- == 0) return &index[i];
   return nullptr;
 }
+const IndexEntry* Store::todayEntry(size_t offset) const {
+  for (size_t i = 0; i < visibleCount; ++i)
+    if ((index[i].section == Section::Today || index[i].section == Section::Overdue) && offset-- == 0)
+      return &index[i];
+  return nullptr;
+}
 size_t Store::count(size_t project) const {
   size_t result = 0;
   for (size_t i = 0; i < visibleCount; ++i) result += index[i].projectIndex == project;
+  return result;
+}
+size_t Store::todayCount() const {
+  size_t result = 0;
+  for (size_t i = 0; i < visibleCount; ++i)
+    result += index[i].section == Section::Today || index[i].section == Section::Overdue;
   return result;
 }
 bool Config::load() {
   Preferences prefs;
   if (!prefs.begin("dashboard", true)) return false;
   prefs.getString("token", token, sizeof(token));
+  prefs.getString("inbox", inboxId, sizeof(inboxId));
   fontSize = std::min<uint8_t>(2, prefs.getUChar("font", 1));
   return configured();
 }
@@ -165,6 +178,9 @@ bool Config::save(const char* newToken, uint8_t font) {
         return false;
       }
     }
+    Preferences previous;
+    if (!previous.begin("dashboard", false) || (previous.isKey("inbox") && !previous.remove("inbox"))) return false;
+    inboxId[0] = 0;
   }
   Preferences prefs;
   if (!prefs.begin("dashboard", false)) return false;
@@ -172,6 +188,18 @@ bool Config::save(const char* newToken, uint8_t font) {
   if (prefs.getUChar("font", 255) != font && prefs.putUChar("font", font) != 1) return false;
   copyText(token, sizeof(token), newToken);
   fontSize = font;
+  return true;
+}
+bool Config::saveInboxId(const char* id) {
+  if (!id || strlen(id) >= sizeof(inboxId)) return false;
+  if (!strcmp(inboxId, id)) return true;
+  Preferences prefs;
+  if (!prefs.begin("dashboard", false)) return false;
+  if (*id) {
+    if (prefs.putString("inbox", id) != strlen(id)) return false;
+  } else if (prefs.isKey("inbox") && !prefs.remove("inbox"))
+    return false;
+  copyText(inboxId, sizeof(inboxId), id);
   return true;
 }
 bool Pending::load() {

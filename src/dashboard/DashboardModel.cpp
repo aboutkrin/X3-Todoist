@@ -79,8 +79,6 @@ Section classify(const char* due, time_t now) {
 }
 
 bool before(const IndexEntry& left, const IndexEntry& right) {
-  if (left.projectIndex != right.projectIndex) return left.projectIndex < right.projectIndex;
-  if (left.section != right.section) return left.section < right.section;
   if (left.rank != right.rank) return left.rank < right.rank;
   if (left.priority != right.priority) return left.priority > right.priority;
   return strcmp(left.id, right.id) < 0;

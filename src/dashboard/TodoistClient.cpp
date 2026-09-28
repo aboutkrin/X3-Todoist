@@ -266,13 +266,17 @@ SyncResult TodoistClient::sync(Store& store) {
   auto result = connect();
   if (result != SyncResult::Ok) return result;
   char userId[64]{};
+  char inboxId[64]{};
   {
     result = request("sync", "sync_token=*&resource_types=%5B%22user%22%5D");
     if (result != SyncResult::Ok) return result;
     JsonAllocator allocator;
     JsonDocument doc(&allocator), filter(&allocator);
     filter["user"]["id"] = true;
+    filter["user"]["inbox_project_id"] = true;
     if (!readJson(doc, filter) || !copyText(userId, sizeof(userId), doc["user"]["id"] | "") || !userId[0])
+      return SyncResult::InvalidData;
+    if (!copyText(inboxId, sizeof(inboxId), doc["user"]["inbox_project_id"] | ""))
       return SyncResult::InvalidData;
   }
   result = projects();
@@ -335,6 +339,58 @@ SyncResult TodoistClient::sync(Store& store) {
     }
     if (!finished) return SyncResult::Limit;
   }
+  std::string cursor;
+  bool finished = false;
+  for (int page = 0; page < 500; ++page) {
+    const std::string path = "tasks/filter?limit=20&query=today%20%7C%20overdue" +
+                             (cursor.empty() ? std::string() : "&cursor=" + encode(cursor.c_str()));
+    result = request(path.c_str());
+    if (result != SyncResult::Ok) return result;
+    JsonAllocator allocator;
+    JsonDocument doc(&allocator), filter(&allocator);
+    for (const char* key : {"id", "content", "description", "project_id", "parent_id", "responsible_uid", "priority",
+                            "checked", "is_deleted"})
+      filter["results"][0][key] = true;
+    filter["results"][0]["due"]["date"] = true;
+    filter["results"][0]["due"]["datetime"] = true;
+    filter["results"][0]["due"]["is_recurring"] = true;
+    filter["next_cursor"] = true;
+    if (!readJson(doc, filter) || !doc["results"].is<JsonArray>()) return SyncResult::InvalidData;
+    for (JsonObjectConst item : doc["results"].as<JsonArrayConst>()) {
+      const char* projectId = item["project_id"] | "";
+      if (selection.find(projectId) >= 0) continue;
+      const char* assignee = item["responsible_uid"] | "";
+      if ((item["checked"] | false) || (item["is_deleted"] | false) || (*assignee && strcmp(assignee, userId)))
+        continue;
+      Project project;
+      if (!catalog.find(projectId, project)) return SyncResult::InvalidData;
+      const char* due = item["due"]["datetime"] | (item["due"]["date"] | "");
+      const auto section = classify(due, time(nullptr));
+      if (section != Section::Today && section != Section::Overdue) continue;
+      memset(task.get(), 0, sizeof(Task));
+      if (!copyText(task->id, sizeof(task->id), item["id"] | "") || !task->id[0] ||
+          !copyText(task->projectId, sizeof(task->projectId), project.id) ||
+          !copyText(task->parentId, sizeof(task->parentId), item["parent_id"] | "") ||
+          !copyText(task->title, sizeof(task->title), item["content"] | "") ||
+          !copyText(task->description, sizeof(task->description), item["description"] | "") ||
+          !copyText(task->due, sizeof(task->due), due) ||
+          !copyText(task->project, sizeof(task->project), project.name))
+        return SyncResult::Limit;
+      task->priority = item["priority"] | 1;
+      task->recurring = item["due"]["is_recurring"] | false;
+      if (!store.append(*task)) return SyncResult::Limit;
+    }
+    const char* next = doc["next_cursor"] | "";
+    if (!*next) {
+      finished = true;
+      break;
+    }
+    if (strlen(next) > 512 || cursor == next) return SyncResult::InvalidData;
+    cursor = next;
+  }
+  if (!finished) return SyncResult::Limit;
+  task.reset();
+  if (!config.saveInboxId(inboxId)) return SyncResult::StorageError;
   return store.commit(time(nullptr)) ? SyncResult::Ok : SyncResult::StorageError;
 }
 SyncResult TodoistClient::sendPending(Pending& pending) {

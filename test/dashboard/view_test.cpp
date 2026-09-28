@@ -1,6 +1,7 @@
 #include <GfxRenderer.h>
 #include <I18n.h>
 
+#include <cassert>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -12,6 +13,8 @@ const char* stubText(StrId id) {
   switch (id) {
     case StrId::STR_DASH_PROJECTS:
       return "My projects";
+    case StrId::STR_DASH_TODAY:
+      return "Today";
     case StrId::STR_DASH_NO_DUE_DATE:
       return "No due date";
     case StrId::STR_DASH_MENU:
@@ -46,34 +49,43 @@ int main(int argc, char** argv) {
   assert(argc == 2);
   std::filesystem::create_directories(argv[1]);
   ProjectSelection projects;
-  projects.count = 3;
+  projects.count = 8;
   projects.projects[0] = Project{"p", "งานส่วนตัว 📚"};
   projects.projects[1] = Project{"r", "Reading"};
   projects.projects[2] = Project{"w", "Work"};
-  Task tasks[4];
+  projects.projects[3] = Project{"h", "Home"};
+  projects.projects[4] = Project{"e", "Errands"};
+  projects.projects[5] = Project{"s", "Someday"};
+  projects.projects[6] = Project{"i", "Inbox"};
+  projects.projects[7] = Project{"f", "Family"};
+  Task detail;
+  Row rows[MAX_VISIBLE_ROWS];
   const char* titles[] = {"💼 ประชุมทีม", "🛒 ซื้อของ", "📚 อ่านหนังสือ", "🇹🇭 เที่ยวกับครอบครัว"};
-  for (int i = 0; i < 4; ++i) {
-    copyText(tasks[i].title, sizeof(tasks[i].title), titles[i]);
-    copyText(tasks[i].project, sizeof(tasks[i].project), i == 0 ? "Work" : "Personal");
+  for (int i = 0; i < MAX_VISIBLE_ROWS; ++i) {
+    copyText(rows[i].title, sizeof(rows[i].title), titles[i % 4]);
+    copyText(rows[i].project, sizeof(rows[i].project), i == 0 ? "Work" : "Personal");
+    copyText(rows[i].due, sizeof(rows[i].due), "2026-09-26");
   }
+  copyText(detail.title, sizeof(detail.title), titles[0]);
+  assert(rowsPerPage(0) == 8 && rowsPerPage(1) == 6 && rowsPerPage(2) == 6);
   for (int font = 0; font < 3; ++font)
     for (int screen = 0; screen < 5; ++screen) {
       View view;
       view.projects = &projects;
       view.projectCount = projects.count;
+      view.todayCount = 8;
       for (size_t i = 0; i < projects.count; ++i) {
-        view.projectOrder[i] = i;
+        view.projectOrder[i] = i == 0 ? 6 : i <= 6 ? i - 1 : i;
         view.available[i] = true;
       }
       view.fontSize = font;
       view.screen = static_cast<Screen>(screen);
-      view.detail = &tasks[0];
+      view.todayList = font == 0 && view.screen == Screen::List;
+      view.detail = &detail;
       copyText(view.date, sizeof(view.date), "Sat 26 Sep");
       copyText(view.status, sizeof(view.status), "Updated 26 Sep 09:30");
-      view.count[0] = 4;
-      view.count[1] = 2;
-      view.count[2] = 3;
-      for (int i = 0; i < 4; ++i) view.rows[i] = &tasks[i];
+      for (size_t i = 0; i < projects.count; ++i) view.count[i] = 8;
+      for (int i = 0; i < MAX_VISIBLE_ROWS; ++i) view.rows[i] = &rows[i];
       copyText(view.detailText, sizeof(view.detailText),
                "Review project proposal\n\nWork\nToday, 10:00\n\nCheck scope and timeline before sending.");
       GfxRenderer renderer;
@@ -117,6 +129,6 @@ int main(int argc, char** argv) {
       }
     }
   }
-  std::cout << "Dashboard views: five screens at three font sizes fit 528x792; long text and joined-emoji pagination "
+  std::cout << "Dashboard views: six/eight rows at three font sizes fit 528x792; long text and joined-emoji pagination "
                "passed\n";
 }

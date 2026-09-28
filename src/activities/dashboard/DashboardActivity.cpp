@@ -65,16 +65,17 @@ void DashboardActivity::prepareForSleep() {
   APP_STATE.dashboardSelection = view.selection;
   APP_STATE.dashboardOverviewSelection = overviewSelection;
   APP_STATE.dashboardListSelection = listSelection;
+  APP_STATE.dashboardTodayList = view.todayList;
   APP_STATE.dashboardDetailOffset = static_cast<uint16_t>(view.detailOffset);
   APP_STATE.dashboardProjectId[0] = 0;
   APP_STATE.dashboardTaskId[0] = 0;
-  if (view.project < projects.count)
+  if (!view.todayList && view.project < projects.count)
     snprintf(APP_STATE.dashboardProjectId, sizeof(APP_STATE.dashboardProjectId), "%s", projects.projects[view.project].id);
   const char* taskId = nullptr;
   if (view.screen == dashboard::Screen::Detail || view.screen == dashboard::Screen::Confirm)
     taskId = detail.id;
   else if (view.screen == dashboard::Screen::List) {
-    const auto* entry = store.entry(view.project, view.selection);
+    const auto* entry = view.todayList ? store.todayEntry(view.selection) : store.entry(view.project, view.selection);
     if (entry) taskId = entry->id;
   }
   if (taskId) snprintf(APP_STATE.dashboardTaskId, sizeof(APP_STATE.dashboardTaskId), "%s", taskId);
@@ -88,22 +89,23 @@ void DashboardActivity::restorePosition() {
   if (savedScreen > static_cast<uint8_t>(Screen::Menu)) return;
   view.screen = static_cast<Screen>(savedScreen);
   view.selection = APP_STATE.dashboardSelection;
+  view.todayList = APP_STATE.dashboardTodayList;
   if (view.screen == Screen::Overview) return;
   if (view.screen == Screen::Menu) {
     view.selection = std::clamp(view.selection, 0, 5);
     return;
   }
 
-  const int project = projects.find(APP_STATE.dashboardProjectId);
-  if (project < 0) {
+  const int project = view.todayList ? -1 : projects.find(APP_STATE.dashboardProjectId);
+  if (!view.todayList && project < 0) {
     view.screen = Screen::Overview;
     view.selection = overviewSelection;
     return;
   }
-  view.project = static_cast<size_t>(project);
-  const size_t count = store.count(view.project);
+  if (!view.todayList) view.project = static_cast<size_t>(project);
+  const size_t count = view.todayList ? store.todayCount() : store.count(view.project);
   for (size_t i = 0; i < count; ++i) {
-    const auto* entry = store.entry(view.project, i);
+    const auto* entry = view.todayList ? store.todayEntry(i) : store.entry(view.project, i);
     if (entry && strcmp(entry->id, APP_STATE.dashboardTaskId) == 0) {
       if (view.screen == Screen::List) view.selection = static_cast<int>(i);
       else listSelection = static_cast<int>(i);
@@ -189,6 +191,9 @@ void DashboardActivity::updateProjects() {
     if (view.available[i]) dashboard::copyText(projects.projects[i].name, sizeof(project.name), project.name);
   }
   std::sort(view.projectOrder, view.projectOrder + projects.count, [this](uint8_t a, uint8_t b) {
+    const bool aInbox = config.inboxId[0] && !strcmp(projects.projects[a].id, config.inboxId);
+    const bool bInbox = config.inboxId[0] && !strcmp(projects.projects[b].id, config.inboxId);
+    if (aInbox != bInbox) return aInbox;
     const int order = strcmp(projects.projects[a].name, projects.projects[b].name);
     return order ? order < 0 : strcmp(projects.projects[a].id, projects.projects[b].id) < 0;
   });
@@ -203,21 +208,36 @@ void DashboardActivity::updateView() {
     snprintf(view.date, sizeof(view.date), "%s", tr(STR_DASH_CLOCK_UNSET));
   view.projects = &projects;
   view.projectCount = projects.count;
+  view.todayCount = store.todayCount();
   for (size_t i = 0; i < projects.count; ++i) view.count[i] = store.count(i);
   for (auto& row : view.rows) row = nullptr;
+  const int rows = dashboard::rowsPerPage(view.fontSize);
   if (view.screen == dashboard::Screen::Overview) {
-    view.selection = std::clamp(view.selection, 0, std::max(0, static_cast<int>(projects.count) - 1));
-    view.pageStart = view.selection / 4 * 4;
-    for (int i = 0; i < 4 && view.pageStart + i < projects.count; ++i) {
-      const auto item = store.entry(view.projectOrder[view.pageStart + i], 0);
-      if (item && store.read(item->record, page[i])) view.rows[i] = &page[i];
+    view.selection = std::clamp(view.selection, 0, static_cast<int>(projects.count));
+    view.pageStart = view.selection / rows * rows;
+    for (int i = 0; i < rows && view.pageStart + i <= projects.count; ++i) {
+      const size_t position = view.pageStart + i;
+      const auto item = position == 0 ? store.todayEntry(0) : store.entry(view.projectOrder[position - 1], 0);
+      if (item && store.read(item->record, detail)) {
+        memcpy(page[i].title, detail.title, sizeof(page[i].title));
+        memcpy(page[i].project, detail.project, sizeof(page[i].project));
+        memcpy(page[i].due, detail.due, sizeof(page[i].due));
+        view.rows[i] = &page[i];
+      }
     }
   } else if (view.screen == dashboard::Screen::List) {
-    view.selection = std::clamp(view.selection, 0, std::max(0, view.count[view.project] - 1));
-    view.pageStart = view.selection / 4 * 4;
-    for (int i = 0; i < 4; ++i) {
-      const auto item = store.entry(view.project, view.pageStart + i);
-      if (item && store.read(item->record, page[i])) view.rows[i] = &page[i];
+    const int count = view.todayList ? view.todayCount : view.count[view.project];
+    view.selection = std::clamp(view.selection, 0, std::max(0, count - 1));
+    view.pageStart = view.selection / rows * rows;
+    for (int i = 0; i < rows; ++i) {
+      const auto item = view.todayList ? store.todayEntry(view.pageStart + i)
+                                       : store.entry(view.project, view.pageStart + i);
+      if (item && store.read(item->record, detail)) {
+        memcpy(page[i].title, detail.title, sizeof(page[i].title));
+        memcpy(page[i].project, detail.project, sizeof(page[i].project));
+        memcpy(page[i].due, detail.due, sizeof(page[i].due));
+        view.rows[i] = &page[i];
+      }
     }
   }
   view.detail = &detail;
@@ -247,6 +267,7 @@ void DashboardActivity::refresh(bool complete) {
     WiFi.mode(WIFI_OFF);
     if (result != dashboard::SyncResult::Ok) store.load(time(nullptr));
     catalog.load();
+    config.load();
     updateProjects();
     LOG_INF("DASH", "Sync result %u, heap: %u, minimum since boot: %u", static_cast<unsigned>(result),
             ESP.getFreeHeap(), ESP.getMinFreeHeap());
@@ -385,8 +406,11 @@ void DashboardActivity::loop() {
         view.selection = listSelection;
       } else {
         if (view.screen == Screen::List) {
-          for (size_t i = 0; i < projects.count; ++i)
-            if (view.projectOrder[i] == view.project) overviewSelection = static_cast<int>(i);
+          if (view.todayList)
+            overviewSelection = 0;
+          else
+            for (size_t i = 0; i < projects.count; ++i)
+              if (view.projectOrder[i] == view.project) overviewSelection = static_cast<int>(i) + 1;
         }
         view.screen = Screen::Overview;
         view.selection = overviewSelection;
@@ -400,23 +424,24 @@ void DashboardActivity::loop() {
           --detailPage;
         view.detailOffset = detailOffsets[detailPage];
       } else {
-        const int count = view.screen == Screen::Overview  ? static_cast<int>(projects.count)
+        const int count = view.screen == Screen::Overview  ? static_cast<int>(projects.count) + 1
                           : view.screen == Screen::Menu    ? 6
                           : view.screen == Screen::Confirm ? 2
-                                                           : view.count[view.project];
+                                                           : view.todayList ? static_cast<int>(view.todayCount)
+                                                                            : view.count[view.project];
         if (count) view.selection = (view.selection + (next ? 1 : count - 1)) % count;
       }
       changed = true;
     } else if (confirm) {
       if (view.screen == Screen::Overview) {
-        if (!projects.count) return;
         overviewSelection = view.selection;
         listSelection = 0;
-        view.project = view.projectOrder[view.selection];
+        view.todayList = view.selection == 0;
+        if (!view.todayList) view.project = view.projectOrder[view.selection - 1];
         view.screen = Screen::List;
         view.selection = 0;
       } else if (view.screen == Screen::List) {
-        const auto entry = store.entry(view.project, view.selection);
+        const auto entry = view.todayList ? store.todayEntry(view.selection) : store.entry(view.project, view.selection);
         if (entry && store.read(entry->record, detail)) {
           listSelection = view.selection;
           snprintf(view.detailText, sizeof(view.detailText), "%s\n\n%s\n%s\n\n%s", detail.title, detail.project,

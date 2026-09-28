@@ -6,7 +6,8 @@ A Todoist dashboard for the **Xteink X3** e-reader, built on
 ## Features
 
 - Choose up to 16 Todoist projects through a local browser setup page.
-- Browse projects and tasks, including undated and future tasks assigned to you or unassigned.
+- Open Today for due and overdue tasks across all projects, with Inbox next when selected.
+- Browse selected projects and tasks, including undated and future tasks assigned to you or unassigned.
 - Read Thai, English and monochrome emoji in project names and task text.
 - Complete tasks with confirmation and recovery for uncertain network responses.
 - Return with Back to the project or task position you selected.

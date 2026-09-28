@@ -15,23 +15,28 @@ static std::string today() {
   strftime(out, sizeof(out), "%Y-%m-%d", &local);
   return out;
 }
-static std::string task(const char* id, const char* assignee = "", bool recurring = false) {
+static std::string task(const char* id, const char* assignee = "", bool recurring = false, const char* project = "p") {
   return std::string("{\"id\":\"") + id +
-         "\",\"project_id\":\"p\",\"content\":\"Example "
+         "\",\"project_id\":\"" + project + "\",\"content\":\"Example "
          "task\",\"description\":\"Details\",\"priority\":4,\"responsible_uid\":\"" +
          assignee + "\",\"due\":{\"date\":\"" + today() + "\",\"is_recurring\":" + (recurring ? "true" : "false") +
          "}}";
 }
 static void syncResponses(bool empty = false) {
-  responses.push_back({"sync", 200, "{\"user\":{\"id\":\"me\"}}"});
+  responses.push_back({"sync", 200, "{\"user\":{\"id\":\"me\",\"inbox_project_id\":\"p\"}}"});
   responses.push_back(
-      {"projects?limit=20", 200, "{\"results\":[{\"id\":\"p\",\"name\":\"Work\"}],\"next_cursor\":\"next\"}"});
+      {"projects?limit=20", 200, "{\"results\":[{\"id\":\"p\",\"name\":\"Work\"},{\"id\":\"q\",\"name\":\"Outside\"}],\"next_cursor\":\"next\"}"});
   responses.push_back({"projects?limit=20&cursor=next", 200, "{\"results\":[],\"next_cursor\":null}"});
   responses.push_back({"tasks?limit=20&project_id=p", 200,
                        "{\"results\":[" + (empty ? std::string() : task("one") + "," + task("other", "someone-else")) +
                            "],\"next_cursor\":\"next\"}"});
   responses.push_back({"tasks?limit=20&project_id=p&cursor=next", 200,
                        "{\"results\":[" + (empty ? std::string() : task("two", "me")) + "],\"next_cursor\":null}"});
+  responses.push_back({"tasks/filter?limit=20&query=today%20%7C%20overdue", 200,
+                       "{\"results\":[" +
+                           (empty ? std::string() : task("outside", "", false, "q") + "," + task("one") + "," +
+                                                        task("assigned-away", "someone-else", false, "q")) +
+                           "],\"next_cursor\":null}"});
 }
 int main(int argc, char** argv) {
   assert(argc == 2);
@@ -50,6 +55,12 @@ int main(int argc, char** argv) {
   assert(client.sync(store) == SyncResult::Ok);
   assert(responses.empty());
   assert(store.count(0) == 2);
+  assert(store.todayCount() == 3);
+  assert(config.inboxId[0] == 'p');
+  bool foundOutside = false;
+  for (size_t i = 0; i < store.todayCount(); ++i)
+    foundOutside |= !strcmp(store.todayEntry(i)->id, "outside");
+  assert(foundOutside);
   // A completed HTTP response is not usable when persisting it fails.
   responses.push_back({"sync", 200, "{\"user\":{\"id\":\"me\"}}"});
   HalFile::failSync = true;
@@ -124,6 +135,7 @@ int main(int argc, char** argv) {
        R"({"results":[{"id":"undated","project_id":"p","content":"No date","priority":4},{"id":"future","project_id":"p","content":"Future","due":{"date":"2099-01-01"}}]})"});
   responses.push_back({"tasks?limit=20&project_id=w", 200,
                        R"({"results":[{"id":"second","project_id":"w","content":"Second project"}]})"});
+  responses.push_back({"tasks/filter?limit=20&query=today%20%7C%20overdue", 200, R"({"results":[]})"});
   assert(client.sync(store) == SyncResult::Ok);
   assert(store.count(0) == 2 && store.count(1) == 1);
   assert(!strcmp(store.entry(0, 0)->id, "future"));

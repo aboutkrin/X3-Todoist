@@ -27,6 +27,7 @@ class CrossPointState : public PersistableStore<CrossPointState> {
   int dashboardSelection = 0;
   int dashboardOverviewSelection = 0;
   int dashboardListSelection = 0;
+  bool dashboardTodayList = false;
   uint16_t dashboardDetailOffset = 0;
   char dashboardProjectId[64]{};
   char dashboardTaskId[64]{};
