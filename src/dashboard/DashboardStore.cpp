@@ -84,6 +84,33 @@ bool Store::load(time_t now) {
   std::sort(index.get(), index.get() + visibleCount, before);
   return true;
 }
+bool Store::resetCache() {
+  finishWrite();
+  if (!Storage.ready()) {
+    LOG_ERR("DASH", "Cannot reset task cache while SD card is unavailable");
+    return false;
+  }
+  bool ok = true;
+  for (int slot = 0; slot < 2; ++slot) {
+    const char* cachePath = path(slot);
+    if (Storage.exists(cachePath) && !Storage.remove(cachePath)) ok = false;
+  }
+  for (const char* cachePath : {"/.crosspoint/dashboard-response.json", "/.crosspoint/dashboard-response-alt.json",
+                                "/.crosspoint/dashboard-projects.bin", "/.crosspoint/dashboard-projects-a.bin",
+                                "/.crosspoint/dashboard-projects-b.bin"}) {
+    if (Storage.exists(cachePath) && !Storage.remove(cachePath)) ok = false;
+  }
+  if (!ok) {
+    LOG_ERR("DASH", "Unable to reset task cache");
+    return false;
+  }
+  activeSlot = -1;
+  header = CacheHeader{};
+  writing = CacheHeader{};
+  visibleCount = 0;
+  releaseIndex();
+  return true;
+}
 bool Store::startWrite() {
   if (!selection || !selection->count || !selection->generation) return false;
   finishWrite();

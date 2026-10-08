@@ -21,6 +21,7 @@ class Store {
  public:
   bool begin(const ProjectSelection& selected);
   bool load(time_t now);
+  bool resetCache();
   void releaseIndex() {
     index.reset();
     indexCapacity = 0;

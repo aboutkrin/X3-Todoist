@@ -157,10 +157,11 @@ void BaseTheme::drawDashboard(GfxRenderer& r, dashboard::View& view) {
       r.drawText(bodyFont, x + 12, y + 8, i == 0 ? tr(STR_CANCEL) : tr(STR_DASH_COMPLETE), !selected);
     }
   } else {
-    const StrId options[] = {StrId::STR_DASH_REFRESH, StrId::STR_DASH_WIFI,     StrId::STR_DASH_SETUP,
-                             StrId::STR_DASH_FONT,    StrId::STR_DASH_SETTINGS, StrId::STR_DASH_SLEEP};
-    const int step = contentHeight / 6;
-    for (int i = 0; i < 6; ++i) {
+    const StrId options[] = {StrId::STR_DASH_REFRESH, StrId::STR_DASH_WIFI,       StrId::STR_DASH_SETUP,
+                             StrId::STR_DASH_FONT,    StrId::STR_DASH_RESET_CACHE, StrId::STR_DASH_SETTINGS,
+                             StrId::STR_DASH_SLEEP,   StrId::STR_DASH_RESTART};
+    const int step = contentHeight / 8;
+    for (int i = 0; i < 8; ++i) {
       const int y = contentY + step * i;
       if (view.selection == i) r.fillRect(x, y, width, step);
       r.drawText(bodyFont, x + 12, y + 8, I18N.get(options[i]), view.selection != i);

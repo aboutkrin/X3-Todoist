@@ -92,7 +92,7 @@ void DashboardActivity::restorePosition() {
   view.todayList = APP_STATE.dashboardTodayList;
   if (view.screen == Screen::Overview) return;
   if (view.screen == Screen::Menu) {
-    view.selection = std::clamp(view.selection, 0, 5);
+    view.selection = std::clamp(view.selection, 0, 7);
     return;
   }
 
@@ -357,12 +357,26 @@ void DashboardActivity::menuAction() {
       break;
     }
     case 4:
+      if (store.resetCache()) {
+        RenderLock lock;
+        view.screen = dashboard::Screen::Overview;
+        view.selection = 0;
+        updateView();
+        syncRequested = true;
+      } else {
+        status(dashboard::SyncResult::StorageError);
+      }
+      break;
+    case 5:
       activityManager.goToSettings();
       break;
-    case 5: {
+    case 6: {
       sleep(false);
       break;
     }
+    case 7:
+      ESP.restart();
+      break;
   }
 }
 void DashboardActivity::loop() {
@@ -425,7 +439,7 @@ void DashboardActivity::loop() {
         view.detailOffset = detailOffsets[detailPage];
       } else {
         const int count = view.screen == Screen::Overview  ? static_cast<int>(projects.count) + 1
-                          : view.screen == Screen::Menu    ? 6
+                          : view.screen == Screen::Menu    ? 8
                           : view.screen == Screen::Confirm ? 2
                                                            : view.todayList ? static_cast<int>(view.todayCount)
                                                                             : view.count[view.project];

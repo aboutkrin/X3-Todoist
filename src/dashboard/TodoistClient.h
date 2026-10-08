@@ -29,6 +29,7 @@ class TodoistClient {
  private:
   Config& config;
   const ProjectSelection& selection;
+  const char* responsePath = nullptr;
   SyncResult connect();
   SyncResult request(const char* path, const char* body = nullptr);
   SyncResult sendPending(Pending& pending);

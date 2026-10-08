@@ -21,6 +21,7 @@
 namespace dashboard {
 namespace {
 constexpr const char* RESPONSE = "/.crosspoint/dashboard-response.json";
+constexpr const char* RESPONSE_FALLBACK = "/.crosspoint/dashboard-response-alt.json";
 constexpr size_t MAX_RESPONSE = 256 * 1024;
 struct Sink {
   HalFile* file;
@@ -99,9 +100,9 @@ std::string encode(const char* input) {
   }
   return result;
 }
-bool readJson(JsonDocument& doc, JsonDocument& filter) {
+bool readJson(JsonDocument& doc, JsonDocument& filter, const char* responsePath) {
   HalFile file;
-  if (!Storage.openFileForRead("DASH", RESPONSE, file)) return false;
+  if (!Storage.openFileForRead("DASH", responsePath, file)) return false;
   struct Reader {
     HalFile& file;
     int read() { return file.read(); }
@@ -155,8 +156,20 @@ SyncResult TodoistClient::request(const char* path, const char* body) {
     return SyncResult::RateLimited;
   HalFile file;
   LOG_INF("DASH", "Response write begin: %.*s", static_cast<int>(strcspn(path, "?/")), path);
-  if (!Storage.openFileForWrite("DASH", RESPONSE, file)) {
-    LOG_ERR("DASH", "Response open failed: %s", RESPONSE);
+  const char* primary = responsePath ? responsePath : RESPONSE;
+  const char* candidates[] = {primary, primary == RESPONSE ? RESPONSE_FALLBACK : RESPONSE};
+  bool opened = false;
+  for (const char* candidate : candidates) {
+    if (Storage.openFileForWrite("DASH", candidate, file) ||
+        (Storage.exists(candidate) && Storage.remove(candidate) &&
+         Storage.openFileForWrite("DASH", candidate, file))) {
+      responsePath = candidate;
+      opened = true;
+      break;
+    }
+  }
+  if (!opened) {
+    LOG_ERR("DASH", "Response open failed for both cache paths");
     return SyncResult::StorageError;
   }
   Sink sink{&file};
@@ -233,7 +246,7 @@ SyncResult TodoistClient::projects() {
     filter["results"][0]["id"] = true;
     filter["results"][0]["name"] = true;
     filter["next_cursor"] = true;
-    if (!readJson(doc, filter) || !doc["results"].is<JsonArray>()) return SyncResult::InvalidData;
+    if (!readJson(doc, filter, responsePath) || !doc["results"].is<JsonArray>()) return SyncResult::InvalidData;
     for (JsonObjectConst item : doc["results"].as<JsonArrayConst>()) {
       Project project;
       if (!copyText(project.id, sizeof(project.id), item["id"] | "") || !project.id[0] ||
@@ -274,7 +287,7 @@ SyncResult TodoistClient::sync(Store& store) {
     JsonDocument doc(&allocator), filter(&allocator);
     filter["user"]["id"] = true;
     filter["user"]["inbox_project_id"] = true;
-    if (!readJson(doc, filter) || !copyText(userId, sizeof(userId), doc["user"]["id"] | "") || !userId[0])
+    if (!readJson(doc, filter, responsePath) || !copyText(userId, sizeof(userId), doc["user"]["id"] | "") || !userId[0])
       return SyncResult::InvalidData;
     if (!copyText(inboxId, sizeof(inboxId), doc["user"]["inbox_project_id"] | ""))
       return SyncResult::InvalidData;
@@ -309,7 +322,7 @@ SyncResult TodoistClient::sync(Store& store) {
       filter["results"][0]["due"]["datetime"] = true;
       filter["results"][0]["due"]["is_recurring"] = true;
       filter["next_cursor"] = true;
-      if (!readJson(doc, filter) || !doc["results"].is<JsonArray>()) return SyncResult::InvalidData;
+      if (!readJson(doc, filter, responsePath) || !doc["results"].is<JsonArray>()) return SyncResult::InvalidData;
       for (JsonObjectConst item : doc["results"].as<JsonArrayConst>()) {
         const char* assignee = item["responsible_uid"] | "";
         if ((item["checked"] | false) || (item["is_deleted"] | false) || (*assignee && strcmp(assignee, userId)))
@@ -355,7 +368,7 @@ SyncResult TodoistClient::sync(Store& store) {
     filter["results"][0]["due"]["datetime"] = true;
     filter["results"][0]["due"]["is_recurring"] = true;
     filter["next_cursor"] = true;
-    if (!readJson(doc, filter) || !doc["results"].is<JsonArray>()) return SyncResult::InvalidData;
+    if (!readJson(doc, filter, responsePath) || !doc["results"].is<JsonArray>()) return SyncResult::InvalidData;
     for (JsonObjectConst item : doc["results"].as<JsonArrayConst>()) {
       const char* projectId = item["project_id"] | "";
       if (selection.find(projectId) >= 0) continue;
@@ -409,7 +422,7 @@ SyncResult TodoistClient::sendPending(Pending& pending) {
   if (result != SyncResult::Ok) return result;
   doc.clear();
   filter["sync_status"] = true;
-  if (!readJson(doc, filter)) return SyncResult::Pending;
+  if (!readJson(doc, filter, responsePath)) return SyncResult::Pending;
   const char* status = doc["sync_status"][pending.uuid].as<const char*>();
   if (!status || strcmp(status, "ok")) {
     if (doc["sync_status"][pending.uuid]["error_code"].is<int>()) {
@@ -436,7 +449,7 @@ SyncResult TodoistClient::complete(const Task& task, Pending& pending, Store& st
       JsonDocument doc(&allocator), filter(&allocator);
       filter["due"]["date"] = true;
       filter["due"]["datetime"] = true;
-      if (!readJson(doc, filter)) return SyncResult::InvalidData;
+      if (!readJson(doc, filter, responsePath)) return SyncResult::InvalidData;
       const char* currentDue = doc["due"]["datetime"] | (doc["due"]["date"] | "");
       if (strcmp(task.due, currentDue)) return SyncResult::InvalidData;
     }
