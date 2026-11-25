@@ -38,6 +38,13 @@ int main(int argc, char** argv) {
     assert(store.count(0) == 0);
     assert(store.load(now));
     assert(store.count(0) == 1);
+    assert(store.resetCache());
+    assert(!store.hasCache() && store.count(0) == 0);
+    assert(!store.load(now));
+    assert(store.startWrite());
+    assert(store.append(task));
+    assert(store.commit(now));
+    assert(store.load(now));
     // Power loss in a later sync must retain the previous committed generation.
     assert(store.startWrite());
     copyText(task.id, sizeof(task.id), "interrupted");

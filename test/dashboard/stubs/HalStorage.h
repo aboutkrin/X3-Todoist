@@ -52,6 +52,7 @@ class HalFile {
 class StorageStub {
  public:
   std::filesystem::path root;
+  bool ready() const { return true; }
   bool exists(const char* p) { return std::filesystem::exists(root / std::string(p).substr(1)); }
   bool remove(const char* p) { return std::filesystem::remove(root / std::string(p).substr(1)); }
   bool openFileForRead(const char*, const char* p, HalFile& f) {

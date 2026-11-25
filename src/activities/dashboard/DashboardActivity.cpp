@@ -28,15 +28,16 @@ void DashboardActivity::onEnter() {
   projects.load();
   catalog.load();
   pending.load();
-  if (!configured && SETTINGS.clockTimezone == 255) {
-    for (size_t i = 0; i < timezones::count(); ++i)
-      if (strcmp(timezones::table()[i].posixTz, "ICT-7") == 0) {
+  // Dashboard dates and the timeline always follow Thai time (Asia/Bangkok, UTC+7).
+  for (size_t i = 0; i < timezones::count(); ++i)
+    if (strcmp(timezones::table()[i].posixTz, "ICT-7") == 0) {
+      if (SETTINGS.clockTimezone != i) {
         SETTINGS.clockTimezone = i;
         SETTINGS.saveToFile();
-        timezones::applyToClock();
-        break;
       }
-  }
+      timezones::applyToClock();
+      break;
+    }
   tm local{};
   if (halClock.localTime(local) && local.tm_year >= 124) {
     local.tm_isdst = -1;
@@ -70,7 +71,8 @@ void DashboardActivity::prepareForSleep() {
   APP_STATE.dashboardProjectId[0] = 0;
   APP_STATE.dashboardTaskId[0] = 0;
   if (!view.todayList && view.project < projects.count)
-    snprintf(APP_STATE.dashboardProjectId, sizeof(APP_STATE.dashboardProjectId), "%s", projects.projects[view.project].id);
+    snprintf(APP_STATE.dashboardProjectId, sizeof(APP_STATE.dashboardProjectId), "%s",
+             projects.projects[view.project].id);
   const char* taskId = nullptr;
   if (view.screen == dashboard::Screen::Detail || view.screen == dashboard::Screen::Confirm)
     taskId = detail.id;
@@ -107,13 +109,16 @@ void DashboardActivity::restorePosition() {
   for (size_t i = 0; i < count; ++i) {
     const auto* entry = view.todayList ? store.todayEntry(i) : store.entry(view.project, i);
     if (entry && strcmp(entry->id, APP_STATE.dashboardTaskId) == 0) {
-      if (view.screen == Screen::List) view.selection = static_cast<int>(i);
-      else listSelection = static_cast<int>(i);
+      if (view.screen == Screen::List)
+        view.selection = static_cast<int>(i);
+      else
+        listSelection = static_cast<int>(i);
       if (view.screen == Screen::Detail || view.screen == Screen::Confirm) {
         if (!store.read(entry->record, detail)) break;
         snprintf(view.detailText, sizeof(view.detailText), "%s\n\n%s\n%s\n\n%s", detail.title, detail.project,
                  detail.due[0] ? detail.due : tr(STR_DASH_NO_DUE_DATE), detail.description);
-        view.detailOffset = detailOffsets[0] = std::min<size_t>(APP_STATE.dashboardDetailOffset, strlen(view.detailText));
+        view.detailOffset = detailOffsets[0] =
+            std::min<size_t>(APP_STATE.dashboardDetailOffset, strlen(view.detailText));
       }
       return;
     }
@@ -230,8 +235,8 @@ void DashboardActivity::updateView() {
     view.selection = std::clamp(view.selection, 0, std::max(0, count - 1));
     view.pageStart = view.selection / rows * rows;
     for (int i = 0; i < rows; ++i) {
-      const auto item = view.todayList ? store.todayEntry(view.pageStart + i)
-                                       : store.entry(view.project, view.pageStart + i);
+      const auto item =
+          view.todayList ? store.todayEntry(view.pageStart + i) : store.entry(view.project, view.pageStart + i);
       if (item && store.read(item->record, detail)) {
         memcpy(page[i].title, detail.title, sizeof(page[i].title));
         memcpy(page[i].project, detail.project, sizeof(page[i].project));
@@ -441,8 +446,8 @@ void DashboardActivity::loop() {
         const int count = view.screen == Screen::Overview  ? static_cast<int>(projects.count) + 1
                           : view.screen == Screen::Menu    ? 8
                           : view.screen == Screen::Confirm ? 2
-                                                           : view.todayList ? static_cast<int>(view.todayCount)
-                                                                            : view.count[view.project];
+                          : view.todayList                 ? static_cast<int>(view.todayCount)
+                                                           : view.count[view.project];
         if (count) view.selection = (view.selection + (next ? 1 : count - 1)) % count;
       }
       changed = true;
@@ -455,7 +460,8 @@ void DashboardActivity::loop() {
         view.screen = Screen::List;
         view.selection = 0;
       } else if (view.screen == Screen::List) {
-        const auto entry = view.todayList ? store.todayEntry(view.selection) : store.entry(view.project, view.selection);
+        const auto entry =
+            view.todayList ? store.todayEntry(view.selection) : store.entry(view.project, view.selection);
         if (entry && store.read(entry->record, detail)) {
           listSelection = view.selection;
           snprintf(view.detailText, sizeof(view.detailText), "%s\n\n%s\n%s\n\n%s", detail.title, detail.project,

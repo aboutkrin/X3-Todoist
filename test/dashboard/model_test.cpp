@@ -62,6 +62,11 @@ int main() {
   char text[5];
   assert(copyText(text, sizeof(text), "test"));
   assert(!copyText(text, sizeof(text), "tests"));
+  char cut[8];
+  copyTruncated(cut, sizeof(cut), "abcdefghij");
+  assert(!strcmp(cut, "abcdefg"));
+  copyTruncated(cut, sizeof(cut), "\u0e01\u0e02\u0e03");  // 3 bytes each: never splits a character
+  assert(!strcmp(cut, "\u0e01\u0e02"));
   // DST changes must group calendar days, rather than divide local epochs by 86400.
   setenv("TZ", "EST5EDT,M3.2.0,M11.1.0", 1);
   tzset();

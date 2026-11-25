@@ -37,6 +37,10 @@ const char* stubText(StrId id) {
       return "Todoist setup";
     case StrId::STR_DASH_FONT:
       return "Text size";
+    case StrId::STR_DASH_RESET_CACHE:
+      return "Reset sync cache";
+    case StrId::STR_DASH_RESTART:
+      return "Restart device";
     case StrId::STR_DASH_SETTINGS:
       return "System settings";
     case StrId::STR_DASH_SLEEP:

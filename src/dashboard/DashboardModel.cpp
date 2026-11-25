@@ -100,4 +100,15 @@ bool copyText(char* out, size_t capacity, const char* input) {
   memmove(out, input, size + 1);
   return true;
 }
+void copyTruncated(char* out, size_t capacity, const char* input) {
+  if (!capacity) return;
+  if (!input) input = "";
+  size_t size = strlen(input);
+  if (size >= capacity) {
+    size = capacity - 1;
+    while (size && (static_cast<unsigned char>(input[size]) & 0xC0) == 0x80) --size;
+  }
+  memmove(out, input, size);
+  out[size] = '\0';
+}
 }  // namespace dashboard

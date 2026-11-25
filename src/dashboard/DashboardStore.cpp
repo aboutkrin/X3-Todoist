@@ -167,8 +167,7 @@ const IndexEntry* Store::entry(size_t project, size_t offset) const {
 }
 const IndexEntry* Store::todayEntry(size_t offset) const {
   for (size_t i = 0; i < visibleCount; ++i)
-    if ((index[i].section == Section::Today || index[i].section == Section::Overdue) && offset-- == 0)
-      return &index[i];
+    if ((index[i].section == Section::Today || index[i].section == Section::Overdue) && offset-- == 0) return &index[i];
   return nullptr;
 }
 size_t Store::count(size_t project) const {

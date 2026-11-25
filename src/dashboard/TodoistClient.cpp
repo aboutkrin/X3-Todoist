@@ -289,8 +289,7 @@ SyncResult TodoistClient::sync(Store& store) {
     filter["user"]["inbox_project_id"] = true;
     if (!readJson(doc, filter, responsePath) || !copyText(userId, sizeof(userId), doc["user"]["id"] | "") || !userId[0])
       return SyncResult::InvalidData;
-    if (!copyText(inboxId, sizeof(inboxId), doc["user"]["inbox_project_id"] | ""))
-      return SyncResult::InvalidData;
+    if (!copyText(inboxId, sizeof(inboxId), doc["user"]["inbox_project_id"] | "")) return SyncResult::InvalidData;
   }
   result = projects();
   if (result != SyncResult::Ok) return result;
@@ -333,14 +332,19 @@ SyncResult TodoistClient::sync(Store& store) {
         if (!copyText(task->id, sizeof(task->id), item["id"] | "") || !task->id[0] ||
             !copyText(task->projectId, sizeof(task->projectId), project.id) ||
             !copyText(task->parentId, sizeof(task->parentId), item["parent_id"] | "") ||
-            !copyText(task->title, sizeof(task->title), item["content"] | "") ||
-            !copyText(task->description, sizeof(task->description), item["description"] | "") ||
-            !copyText(task->due, sizeof(task->due), due) ||
-            !copyText(task->project, sizeof(task->project), project.name))
+            !copyText(task->due, sizeof(task->due), due)) {
+          LOG_ERR("DASH", "Task id/parent/due field too long");
           return SyncResult::Limit;
+        }
+        copyTruncated(task->title, sizeof(task->title), item["content"] | "");
+        copyTruncated(task->description, sizeof(task->description), item["description"] | "");
+        copyTruncated(task->project, sizeof(task->project), project.name);
         task->priority = item["priority"] | 1;
         task->recurring = item["due"]["is_recurring"] | false;
-        if (!store.append(*task)) return SyncResult::Limit;
+        if (!store.append(*task)) {
+          LOG_ERR("DASH", "Task cache full or write failed (limit %u)", static_cast<unsigned>(MAX_TASKS));
+          return SyncResult::Limit;
+        }
       }
       const char* next = doc["next_cursor"] | "";
       if (!*next) {
@@ -350,7 +354,10 @@ SyncResult TodoistClient::sync(Store& store) {
       if (strlen(next) > 512 || cursor == next) return SyncResult::InvalidData;
       cursor = next;
     }
-    if (!finished) return SyncResult::Limit;
+    if (!finished) {
+      LOG_ERR("DASH", "Project task pages exceeded limit");
+      return SyncResult::Limit;
+    }
   }
   std::string cursor;
   bool finished = false;
@@ -384,14 +391,19 @@ SyncResult TodoistClient::sync(Store& store) {
       if (!copyText(task->id, sizeof(task->id), item["id"] | "") || !task->id[0] ||
           !copyText(task->projectId, sizeof(task->projectId), project.id) ||
           !copyText(task->parentId, sizeof(task->parentId), item["parent_id"] | "") ||
-          !copyText(task->title, sizeof(task->title), item["content"] | "") ||
-          !copyText(task->description, sizeof(task->description), item["description"] | "") ||
-          !copyText(task->due, sizeof(task->due), due) ||
-          !copyText(task->project, sizeof(task->project), project.name))
+          !copyText(task->due, sizeof(task->due), due)) {
+        LOG_ERR("DASH", "Task id/parent/due field too long");
         return SyncResult::Limit;
+      }
+      copyTruncated(task->title, sizeof(task->title), item["content"] | "");
+      copyTruncated(task->description, sizeof(task->description), item["description"] | "");
+      copyTruncated(task->project, sizeof(task->project), project.name);
       task->priority = item["priority"] | 1;
       task->recurring = item["due"]["is_recurring"] | false;
-      if (!store.append(*task)) return SyncResult::Limit;
+      if (!store.append(*task)) {
+        LOG_ERR("DASH", "Task cache full or write failed (limit %u)", static_cast<unsigned>(MAX_TASKS));
+        return SyncResult::Limit;
+      }
     }
     const char* next = doc["next_cursor"] | "";
     if (!*next) {

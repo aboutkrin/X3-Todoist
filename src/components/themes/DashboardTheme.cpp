@@ -78,18 +78,18 @@ void BaseTheme::drawDashboard(GfxRenderer& r, dashboard::View& view) {
   r.drawText(UI_12_FONT_ID, x + width - r.getTextWidth(UI_12_FONT_ID, battery), top, battery);
   if (view.sleeping) {
     const char* sleeping = tr(STR_SLEEPING);
-    r.drawText(UI_12_FONT_ID, x + width - r.getTextWidth(UI_12_FONT_ID, battery) -
-                                  r.getTextWidth(UI_12_FONT_ID, sleeping) - pad,
-               top, sleeping);
+    r.drawText(UI_12_FONT_ID,
+               x + width - r.getTextWidth(UI_12_FONT_ID, battery) - r.getTextWidth(UI_12_FONT_ID, sleeping) - pad, top,
+               sleeping);
   }
   const int titleY = top + smallHeight + metrics.verticalSpacing;
   const char* title = view.screen == Screen::Overview                     ? tr(STR_DASH_PROJECTS)
                       : view.screen == Screen::Menu                       ? tr(STR_DASH_MENU)
-                      : view.todayList                                     ? tr(STR_DASH_TODAY)
+                      : view.todayList                                    ? tr(STR_DASH_TODAY)
                       : view.projects && view.project < view.projectCount ? view.projects->projects[view.project].name
                                                                           : tr(STR_DASH_PROJECTS);
-  const int titleFont = view.screen == Screen::Overview || view.screen == Screen::List ? NOTOSANS_16_FONT_ID
-                                                                                       : NOTOSANS_18_FONT_ID;
+  const int titleFont =
+      view.screen == Screen::Overview || view.screen == Screen::List ? NOTOSANS_16_FONT_ID : NOTOSANS_18_FONT_ID;
   const int titleHeight = r.getLineHeight(titleFont);
   lines(r, titleFont, Rect{x, titleY, width, titleHeight}, title, 0, 1, true, true);
   const int contentY = titleY + titleHeight + metrics.verticalSpacing * 2;
@@ -111,8 +111,8 @@ void BaseTheme::drawDashboard(GfxRenderer& r, dashboard::View& view) {
       r.drawText(bodyFont, x + width - r.getTextWidth(bodyFont, count), y + 2, count);
       lines(r, UI_12_FONT_ID, Rect{x + 16, y + step - smallHeight - 2, width - 16, smallHeight},
             !today && !view.available[index] ? tr(STR_DASH_PROJECT_UNAVAILABLE)
-            : view.rows[i]         ? view.rows[i]->title
-                                   : tr(STR_DASH_NO_TASKS),
+            : view.rows[i]                   ? view.rows[i]->title
+                                             : tr(STR_DASH_NO_TASKS),
             0, 1);
     }
   } else if (view.screen == Screen::List) {
@@ -157,7 +157,7 @@ void BaseTheme::drawDashboard(GfxRenderer& r, dashboard::View& view) {
       r.drawText(bodyFont, x + 12, y + 8, i == 0 ? tr(STR_CANCEL) : tr(STR_DASH_COMPLETE), !selected);
     }
   } else {
-    const StrId options[] = {StrId::STR_DASH_REFRESH, StrId::STR_DASH_WIFI,       StrId::STR_DASH_SETUP,
+    const StrId options[] = {StrId::STR_DASH_REFRESH, StrId::STR_DASH_WIFI,        StrId::STR_DASH_SETUP,
                              StrId::STR_DASH_FONT,    StrId::STR_DASH_RESET_CACHE, StrId::STR_DASH_SETTINGS,
                              StrId::STR_DASH_SLEEP,   StrId::STR_DASH_RESTART};
     const int step = contentHeight / 8;

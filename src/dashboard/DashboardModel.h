@@ -40,4 +40,6 @@ Section classify(const char* due, time_t now);
 bool before(const IndexEntry& left, const IndexEntry& right);
 uint32_t checksum(uint32_t crc, const void* bytes, size_t count);
 bool copyText(char* out, size_t capacity, const char* input);
+// Copies as much as fits, cutting on a UTF-8 character boundary. Display text only.
+void copyTruncated(char* out, size_t capacity, const char* input);
 }  // namespace dashboard

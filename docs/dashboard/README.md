@@ -195,8 +195,9 @@ they do not reproduce the embedded font rasterizer or physical bezel exactly.
    catalogue with a notice. Pending task completions must reconcile before saving.
    Setup closes after saving, leaving the screen, or five minutes. Five incorrect
    code attempts require reopening setup.
-4. Confirm **System settings > clock timezone** matches your location. The first
-   unconfigured dashboard selects Bangkok if no timezone was previously set.
+4. The dashboard always uses Thai time (Asia/Bangkok, UTC+7) for the date, the
+   Today/Overdue/Upcoming timeline and the sync stamp; opening it sets the clock
+   timezone to Bangkok.
 5. Use **Text size** to cycle through the three sizes.
 
 The pairing page uses local HTTP and must be used on a trusted network. The token
