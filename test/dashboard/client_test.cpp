@@ -15,27 +15,43 @@ static std::string today() {
   strftime(out, sizeof(out), "%Y-%m-%d", &local);
   return out;
 }
-static std::string task(const char* id, const char* assignee = "", bool recurring = false, const char* project = "p") {
-  return std::string("{\"id\":\"") + id +
-         "\",\"project_id\":\"" + project + "\",\"content\":\"Example "
+static std::string task(const char* id, const char* assignee = "", bool recurring = false, const char* project = "p",
+                        const char* section = nullptr) {
+  return std::string("{\"id\":\"") + id + "\",\"project_id\":\"" + project +
+         "\",\"section_id\":" + (section ? std::string("\"") + section + "\"" : std::string("null")) +
+         ",\"content\":\"Example "
          "task\",\"description\":\"Details\",\"priority\":4,\"responsible_uid\":\"" +
          assignee + "\",\"due\":{\"date\":\"" + today() + "\",\"is_recurring\":" + (recurring ? "true" : "false") +
          "}}";
 }
 static void syncResponses(bool empty = false) {
   responses.push_back({"sync", 200, "{\"user\":{\"id\":\"me\",\"inbox_project_id\":\"p\"}}"});
-  responses.push_back(
-      {"projects?limit=20", 200, "{\"results\":[{\"id\":\"p\",\"name\":\"Work\"},{\"id\":\"q\",\"name\":\"Outside\"}],\"next_cursor\":\"next\"}"});
+  responses.push_back({"projects?limit=20", 200,
+                       "{\"results\":[{\"id\":\"p\",\"name\":\"Work\"},{\"id\":\"q\",\"name\":\"Outside\"}],\"next_"
+                       "cursor\":\"next\"}"});
   responses.push_back({"projects?limit=20&cursor=next", 200, "{\"results\":[],\"next_cursor\":null}"});
-  responses.push_back({"tasks?limit=20&project_id=p", 200,
-                       "{\"results\":[" + (empty ? std::string() : task("one") + "," + task("other", "someone-else")) +
-                           "],\"next_cursor\":\"next\"}"});
-  responses.push_back({"tasks?limit=20&project_id=p&cursor=next", 200,
-                       "{\"results\":[" + (empty ? std::string() : task("two", "me")) + "],\"next_cursor\":null}"});
+  // Two sections: "Pending" is ordered after "Urgent" and an archived one is ignored.
+  responses.push_back(
+      {"sections?limit=20&project_id=p", 200,
+       R"({"results":[{"id":"s-pending","name":"🟠 Pending","section_order":2},{"id":"s-old","name":"Old","section_order":0,"is_archived":true}],"next_cursor":"more"})"});
+  responses.push_back({"sections?limit=20&project_id=p&cursor=more", 200,
+                       R"({"results":[{"id":"s-urgent","name":"Urgent","section_order":1}],"next_cursor":null})"});
+  responses.push_back(
+      {"tasks?limit=20&project_id=p", 200,
+       "{\"results\":[" +
+           (empty ? std::string() : task("one", "", false, "p", "s-pending") + "," + task("other", "someone-else")) +
+           "],\"next_cursor\":\"next\"}"});
+  responses.push_back(
+      {"tasks?limit=20&project_id=p&cursor=next", 200,
+       "{\"results\":[" +
+           (empty ? std::string()
+                  : task("two", "me", false, "p", "s-urgent") + "," + task("loose", "me", false, "p", "gone")) +
+           "],\"next_cursor\":null}"});
   responses.push_back({"tasks/filter?limit=20&query=today%20%7C%20overdue", 200,
                        "{\"results\":[" +
-                           (empty ? std::string() : task("outside", "", false, "q") + "," + task("one") + "," +
-                                                        task("assigned-away", "someone-else", false, "q")) +
+                           (empty ? std::string()
+                                  : task("outside", "", false, "q") + "," + task("one") + "," +
+                                        task("assigned-away", "someone-else", false, "q")) +
                            "],\"next_cursor\":null}"});
 }
 int main(int argc, char** argv) {
@@ -54,12 +70,23 @@ int main(int argc, char** argv) {
   syncResponses();
   assert(client.sync(store) == SyncResult::Ok);
   assert(responses.empty());
-  assert(store.count(0) == 2);
-  assert(store.todayCount() == 3);
+  assert(store.count(0) == 3);
+  assert(store.todayCount() == 4);
+  // Unsectioned (and unknown-section) tasks first, then sections by Todoist order.
+  {
+    Task first, second, third;
+    assert(store.read(store.entry(0, 0)->record, first) && !strcmp(first.id, "loose") && !first.section[0] &&
+           first.sectionOrder == 0);
+    assert(store.read(store.entry(0, 1)->record, second) && !strcmp(second.id, "two") &&
+           !strcmp(second.section, "Urgent") && second.sectionOrder == 2);
+    assert(store.read(store.entry(0, 2)->record, third) && !strcmp(third.id, "one") &&
+           !strcmp(third.section, "\U0001f7e0 Pending") && third.sectionOrder == 3);
+    assert(store.sectionCount(0, 0) == 1 && store.sectionCount(0, 2) == 1 && store.sectionCount(0, 3) == 1);
+    assert(!store.entry(0, 3));
+  }
   assert(config.inboxId[0] == 'p');
   bool foundOutside = false;
-  for (size_t i = 0; i < store.todayCount(); ++i)
-    foundOutside |= !strcmp(store.todayEntry(i)->id, "outside");
+  for (size_t i = 0; i < store.todayCount(); ++i) foundOutside |= !strcmp(store.todayEntry(i)->id, "outside");
   assert(foundOutside);
   // A completed HTTP response is not usable when persisting it fails.
   responses.push_back({"sync", 200, "{\"user\":{\"id\":\"me\"}}"});
@@ -67,13 +94,13 @@ int main(int argc, char** argv) {
   assert(client.sync(store) == SyncResult::StorageError);
   HalFile::failSync = false;
   assert(responses.empty());
-  assert(store.count(0) == 2);
+  assert(store.count(0) == 3);
   Task selected;
   assert(store.read(store.entry(0, 0)->record, selected));
   assert(!strcmp(selected.project, "Work"));
   responses.push_back({"sync", 401, "{}"});
   assert(client.sync(store) == SyncResult::Auth);
-  assert(store.count(0) == 2);
+  assert(store.count(0) == 3);
   responses.push_back({"sync", 429, "{}"});
   assert(client.sync(store) == SyncResult::RateLimited);
   assert(client.sync(store) == SyncResult::RateLimited);
@@ -130,9 +157,11 @@ int main(int argc, char** argv) {
   responses.push_back({"sync", 200, "{\"user\":{\"id\":\"me\"}}"});
   responses.push_back(
       {"projects?limit=20", 200, R"({"results":[{"id":"p","name":"Work renamed"},{"id":"w","name":"Work two"}]})"});
+  responses.push_back({"sections?limit=20&project_id=p", 200, R"({"results":[]})"});
   responses.push_back(
       {"tasks?limit=20&project_id=p", 200,
        R"({"results":[{"id":"undated","project_id":"p","content":"No date","priority":4},{"id":"future","project_id":"p","content":"Future","due":{"date":"2099-01-01"}}]})"});
+  responses.push_back({"sections?limit=20&project_id=w", 200, R"({"results":[]})"});
   responses.push_back({"tasks?limit=20&project_id=w", 200,
                        R"({"results":[{"id":"second","project_id":"w","content":"Second project"}]})"});
   responses.push_back({"tasks/filter?limit=20&query=today%20%7C%20overdue", 200, R"({"results":[]})"});
@@ -144,6 +173,7 @@ int main(int argc, char** argv) {
   assert(!strcmp(selected.project, "Work renamed"));
   responses.push_back({"sync", 200, "{\"user\":{\"id\":\"me\"}}"});
   responses.push_back({"projects?limit=20", 200, R"({"results":[{"id":"p","name":"Work"}]})"});
+  responses.push_back({"sections?limit=20&project_id=p", 200, R"({"results":[]})"});
   responses.push_back({"tasks?limit=20&project_id=p", 200,
                        R"({"results":[{"id":"wrong","project_id":"unselected","content":"Wrong project"}]})"});
   assert(client.sync(store) == SyncResult::InvalidData);

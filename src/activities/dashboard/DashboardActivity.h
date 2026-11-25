@@ -46,6 +46,7 @@ class DashboardActivity final : public Activity {
   void sleep(bool fromTimeout);
   void refresh(bool complete = false);
   void updateView();
+  static void fillRow(dashboard::Row& row, const dashboard::Task& task);
   void updateProjects();
   void connectWifi(bool setup);
   void status(dashboard::SyncResult result);

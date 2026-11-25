@@ -203,6 +203,13 @@ void DashboardActivity::updateProjects() {
     return order ? order < 0 : strcmp(projects.projects[a].id, projects.projects[b].id) < 0;
   });
 }
+void DashboardActivity::fillRow(dashboard::Row& row, const dashboard::Task& task) {
+  row = dashboard::Row{};
+  dashboard::copyTruncated(row.title, sizeof(row.title), task.title);
+  dashboard::copyTruncated(row.project, sizeof(row.project), task.project);
+  dashboard::copyTruncated(row.due, sizeof(row.due), task.due);
+  dashboard::copyTruncated(row.section, sizeof(row.section), task.section);
+}
 void DashboardActivity::updateView() {
   tm local{};
   const time_t now = time(nullptr);
@@ -224,9 +231,7 @@ void DashboardActivity::updateView() {
       const size_t position = view.pageStart + i;
       const auto item = position == 0 ? store.todayEntry(0) : store.entry(view.projectOrder[position - 1], 0);
       if (item && store.read(item->record, detail)) {
-        memcpy(page[i].title, detail.title, sizeof(page[i].title));
-        memcpy(page[i].project, detail.project, sizeof(page[i].project));
-        memcpy(page[i].due, detail.due, sizeof(page[i].due));
+        fillRow(page[i], detail);
         view.rows[i] = &page[i];
       }
     }
@@ -234,13 +239,18 @@ void DashboardActivity::updateView() {
     const int count = view.todayList ? view.todayCount : view.count[view.project];
     view.selection = std::clamp(view.selection, 0, std::max(0, count - 1));
     view.pageStart = view.selection / rows * rows;
+    uint16_t previousSection = 0;
     for (int i = 0; i < rows; ++i) {
       const auto item =
           view.todayList ? store.todayEntry(view.pageStart + i) : store.entry(view.project, view.pageStart + i);
       if (item && store.read(item->record, detail)) {
-        memcpy(page[i].title, detail.title, sizeof(page[i].title));
-        memcpy(page[i].project, detail.project, sizeof(page[i].project));
-        memcpy(page[i].due, detail.due, sizeof(page[i].due));
+        fillRow(page[i], detail);
+        if (!view.todayList && item->sectionOrder) {
+          // Each page opens with its section heading; later rows add one when the section changes.
+          page[i].sectionCount = static_cast<uint16_t>(store.sectionCount(view.project, item->sectionOrder));
+          page[i].sectionHeader = i == 0 || previousSection != item->sectionOrder;
+        }
+        previousSection = item->sectionOrder;
         view.rows[i] = &page[i];
       }
     }

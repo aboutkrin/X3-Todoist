@@ -7,10 +7,14 @@ namespace dashboard {
 enum class Screen { Overview, List, Detail, Confirm, Menu };
 constexpr int MAX_VISIBLE_ROWS = 8;
 constexpr int rowsPerPage(uint8_t fontSize) { return fontSize == 0 ? 8 : 6; }
+// Display-only summary of a task; titles are cut to what one list line can show.
 struct Row {
-  char title[1024]{};
+  char title[512]{};
   char project[128]{};
   char due[48]{};
+  char section[48]{};
+  uint16_t sectionCount = 0;
+  bool sectionHeader = false;  // draw the section heading above this row
 };
 static_assert(sizeof(Row) * MAX_VISIBLE_ROWS <= sizeof(Task) * 4);
 struct View {

@@ -5,6 +5,7 @@
 #include <Preferences.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 
 namespace dashboard {
@@ -24,7 +25,7 @@ bool Store::verify(int slot, CacheHeader& result) {
   HalFile file;
   if (!Storage.openFileForRead("DASH", path(slot), file)) return false;
   if (!selection || !selection->count || file.read(&result, sizeof(result)) != sizeof(result) ||
-      result.magic != 0x58445431 || result.version != 2 || result.selectionGeneration != selection->generation ||
+      result.magic != 0x58445431 || result.version != 3 || result.selectionGeneration != selection->generation ||
       result.selectionFingerprint != selection->fingerprint() || result.count > MAX_TASKS ||
       file.size() != sizeof(result) + result.count * sizeof(Task))
     return false;
@@ -36,6 +37,7 @@ bool Store::verify(int slot, CacheHeader& result) {
     if (!memchr(scratch->id, 0, sizeof(scratch->id)) || !memchr(scratch->title, 0, sizeof(scratch->title)) ||
         !memchr(scratch->project, 0, sizeof(scratch->project)) || !memchr(scratch->due, 0, sizeof(scratch->due)) ||
         !memchr(scratch->description, 0, sizeof(scratch->description)) ||
+        !memchr(scratch->section, 0, sizeof(scratch->section)) ||
         !memchr(scratch->parentId, 0, sizeof(scratch->parentId)) ||
         !memchr(scratch->projectId, 0, sizeof(scratch->projectId)) ||
         (selection->find(scratch->projectId) < 0 && classify(scratch->due, result.syncedAt) != Section::Today &&
@@ -77,6 +79,7 @@ bool Store::load(time_t now) {
     item.section = classify(scratch->due, now);
     item.projectIndex = project < 0 ? MAX_PROJECTS : project;
     item.priority = scratch->priority;
+    item.sectionOrder = scratch->sectionOrder;
     copyText(item.id, sizeof(item.id), scratch->id);
     int day = 0;
     if (!parseDue(scratch->due, item.rank, day)) item.rank = INT64_MAX;
@@ -160,10 +163,27 @@ bool Store::read(uint16_t record, Task& task) const {
   return activeSlot >= 0 && record < header.count && Storage.openFileForRead("DASH", path(activeSlot), file) &&
          file.seek(sizeof(CacheHeader) + record * sizeof(Task)) && file.read(&task, sizeof(task)) == sizeof(task);
 }
+// Project order: tasks without a section first, then sections by Todoist order;
+// within a section the index order (due date, priority) applies. A pass per
+// section keeps this allocation-free (<= 512 entries, few sections).
 const IndexEntry* Store::entry(size_t project, size_t offset) const {
+  int previous = -1;
+  for (;;) {
+    int next = INT32_MAX;
+    for (size_t i = 0; i < visibleCount; ++i)
+      if (index[i].projectIndex == project && index[i].sectionOrder > previous)
+        next = std::min<int>(next, index[i].sectionOrder);
+    if (next == INT32_MAX) return nullptr;
+    for (size_t i = 0; i < visibleCount; ++i)
+      if (index[i].projectIndex == project && index[i].sectionOrder == next && offset-- == 0) return &index[i];
+    previous = next;
+  }
+}
+size_t Store::sectionCount(size_t project, uint16_t sectionOrder) const {
+  size_t result = 0;
   for (size_t i = 0; i < visibleCount; ++i)
-    if (index[i].projectIndex == project && offset-- == 0) return &index[i];
-  return nullptr;
+    result += index[i].projectIndex == project && index[i].sectionOrder == sectionOrder;
+  return result;
 }
 const IndexEntry* Store::todayEntry(size_t offset) const {
   for (size_t i = 0; i < visibleCount; ++i)

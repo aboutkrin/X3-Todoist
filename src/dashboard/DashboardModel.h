@@ -19,6 +19,9 @@ struct Task {
   char title[1024]{};
   char description[1024]{};
   char due[48]{};
+  char section[48]{};
+  // 0 = no section; otherwise Todoist section_order + 1.
+  uint16_t sectionOrder = 0;
   uint8_t priority = 1;
   uint8_t recurring = 0;
 };
@@ -27,6 +30,7 @@ struct IndexEntry {
   int64_t rank = 0;
   char id[64]{};
   uint16_t record = 0;
+  uint16_t sectionOrder = 0;
   Section section = Section::Hidden;
   uint8_t priority = 1;
   uint8_t projectIndex = 0;

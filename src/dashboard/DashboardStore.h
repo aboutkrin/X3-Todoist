@@ -9,7 +9,7 @@
 namespace dashboard {
 struct CacheHeader {
   uint32_t magic = 0x58445431;
-  uint32_t version = 2;
+  uint32_t version = 3;
   uint32_t selectionGeneration = 0;
   uint32_t selectionFingerprint = 0;
   uint32_t generation = 0;
@@ -36,6 +36,7 @@ class Store {
   bool read(uint16_t record, Task& task) const;
   const IndexEntry* entry(size_t project, size_t offset) const;
   size_t count(size_t project) const;
+  size_t sectionCount(size_t project, uint16_t sectionOrder) const;
   const IndexEntry* todayEntry(size_t offset) const;
   size_t todayCount() const;
   time_t syncedAt() const { return header.syncedAt; }

@@ -70,6 +70,12 @@ int main(int argc, char** argv) {
     copyText(rows[i].project, sizeof(rows[i].project), i == 0 ? "Work" : "Personal");
     copyText(rows[i].due, sizeof(rows[i].due), "2026-09-26");
   }
+  // Section headings: one at the top of the page and later ones where the section changes.
+  for (int i : {0, 2, 5}) {
+    rows[i].sectionHeader = true;
+    copyText(rows[i].section, sizeof(rows[i].section), i == 0 ? "\U0001f534 Urgent" : "\U0001f7e0 Pending");
+    rows[i].sectionCount = i == 0 ? 2 : 7;
+  }
   copyText(detail.title, sizeof(detail.title), titles[0]);
   assert(rowsPerPage(0) == 8 && rowsPerPage(1) == 6 && rowsPerPage(2) == 6);
   for (int font = 0; font < 3; ++font)

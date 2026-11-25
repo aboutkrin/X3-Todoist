@@ -127,6 +127,11 @@ existing installation until its backup and partition layout have been checked.
   sequences/presentation variants; 165 newer unsupported sequences use a visible
   crossed-box placeholder. Skin tones can share monochrome artwork. See
   [emoji sources and regeneration](../../src/dashboard/emoji/README.md).
+- Project lists mirror Todoist sections: tasks without a section come first, then
+  each section in Todoist order, with a heading (name, task count, rule) above its
+  first task. Headings are not selectable and repeat at the top of each page.
+  Sections are fetched per project during sync; the task cache format is version 3,
+  so the first sync after updating rebuilds it.
 - Logical Previous/Next buttons move selection; Confirm opens a project or task.
   Confirm on a detail opens a completion prompt, with Cancel selected initially.
   Back on the overview opens **Menu**.

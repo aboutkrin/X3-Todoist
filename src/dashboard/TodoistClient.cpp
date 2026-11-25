@@ -161,8 +161,7 @@ SyncResult TodoistClient::request(const char* path, const char* body) {
   bool opened = false;
   for (const char* candidate : candidates) {
     if (Storage.openFileForWrite("DASH", candidate, file) ||
-        (Storage.exists(candidate) && Storage.remove(candidate) &&
-         Storage.openFileForWrite("DASH", candidate, file))) {
+        (Storage.exists(candidate) && Storage.remove(candidate) && Storage.openFileForWrite("DASH", candidate, file))) {
       responsePath = candidate;
       opened = true;
       break;
@@ -261,6 +260,41 @@ SyncResult TodoistClient::projects() {
   }
   return SyncResult::Limit;
 }
+SyncResult TodoistClient::sections(const char* projectId, SectionTable& table) {
+  table.count = 0;
+  std::string cursor;
+  for (int page = 0; page < 20; ++page) {
+    const std::string path = "sections?limit=20&project_id=" + encode(projectId) +
+                             (cursor.empty() ? std::string() : "&cursor=" + encode(cursor.c_str()));
+    auto result = request(path.c_str());
+    if (result != SyncResult::Ok) return result;
+    JsonAllocator allocator;
+    JsonDocument doc(&allocator), filter(&allocator);
+    for (const char* key : {"id", "name", "section_order", "order", "is_archived", "is_deleted"})
+      filter["results"][0][key] = true;
+    filter["next_cursor"] = true;
+    if (!readJson(doc, filter, responsePath) || !doc["results"].is<JsonArray>()) return SyncResult::InvalidData;
+    for (JsonObjectConst item : doc["results"].as<JsonArrayConst>()) {
+      if ((item["is_archived"] | false) || (item["is_deleted"] | false)) continue;
+      if (table.count >= SectionTable::CAPACITY) {
+        LOG_ERR("DASH", "More than %u sections in a project; extra sections shown ungrouped",
+                static_cast<unsigned>(SectionTable::CAPACITY));
+        break;
+      }
+      auto& entry = table.items[table.count];
+      if (!copyText(entry.id, sizeof(entry.id), item["id"] | "") || !entry.id[0]) continue;
+      copyTruncated(entry.name, sizeof(entry.name), item["name"] | "");
+      const int order = item["section_order"] | (item["order"] | 0);
+      entry.order = static_cast<uint16_t>(std::min(std::max(order, 0), 65534) + 1);
+      ++table.count;
+    }
+    const char* next = doc["next_cursor"] | "";
+    if (!*next) return SyncResult::Ok;
+    if (strlen(next) > 512 || cursor == next) return SyncResult::InvalidData;
+    cursor = next;
+  }
+  return SyncResult::Limit;
+}
 bool TodoistClient::projectName(const char* id, char* out, size_t capacity) {
   ProjectCatalog catalog;
   if (!catalog.load()) return false;
@@ -302,9 +336,16 @@ SyncResult TodoistClient::sync(Store& store) {
     LOG_ERR("DASH", "Task allocation failed");
     return SyncResult::Transport;
   }
+  auto sectionTable = makeUniqueNoThrow<SectionTable>();
+  if (!sectionTable) {
+    LOG_ERR("DASH", "Section table allocation failed");
+    return SyncResult::Transport;
+  }
   for (size_t projectIndex = 0; projectIndex < selection.count; ++projectIndex) {
     Project project;
     if (!catalog.find(selection.projects[projectIndex].id, project)) continue;
+    result = sections(project.id, *sectionTable);
+    if (result != SyncResult::Ok) return result;
     std::string cursor;
     bool finished = false;
     for (int page = 0; page < 500; ++page) {
@@ -314,8 +355,8 @@ SyncResult TodoistClient::sync(Store& store) {
       if (result != SyncResult::Ok) return result;
       JsonAllocator allocator;
       JsonDocument doc(&allocator), filter(&allocator);
-      for (const char* key : {"id", "content", "description", "project_id", "parent_id", "responsible_uid", "priority",
-                              "checked", "is_deleted"})
+      for (const char* key : {"id", "content", "description", "project_id", "section_id", "parent_id",
+                              "responsible_uid", "priority", "checked", "is_deleted"})
         filter["results"][0][key] = true;
       filter["results"][0]["due"]["date"] = true;
       filter["results"][0]["due"]["datetime"] = true;
@@ -339,6 +380,10 @@ SyncResult TodoistClient::sync(Store& store) {
         copyTruncated(task->title, sizeof(task->title), item["content"] | "");
         copyTruncated(task->description, sizeof(task->description), item["description"] | "");
         copyTruncated(task->project, sizeof(task->project), project.name);
+        if (const auto* section = sectionTable->find(item["section_id"] | "")) {
+          copyTruncated(task->section, sizeof(task->section), section->name);
+          task->sectionOrder = section->order;
+        }
         task->priority = item["priority"] | 1;
         task->recurring = item["due"]["is_recurring"] | false;
         if (!store.append(*task)) {

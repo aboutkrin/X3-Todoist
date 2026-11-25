@@ -120,12 +120,42 @@ void BaseTheme::drawDashboard(GfxRenderer& r, dashboard::View& view) {
     if (!(view.todayList ? view.todayCount : view.count[project]))
       lines(r, bodyFont, Rect{x, contentY, width, contentHeight},
             view.todayList || view.available[project] ? tr(STR_DASH_NO_TASKS) : tr(STR_DASH_PROJECT_UNAVAILABLE), 0, 2);
+    // Section headings take extra height; rows shrink to fit, and headings are
+    // dropped from the end only if rows would become too short to read.
+    const int headerHeight = smallHeight + 8;
+    const int minStep = bodyHeight + smallHeight + 4;
+    int shown = 0, headers = 0;
     for (int i = 0; i < rowCount && view.rows[i]; ++i) {
-      const int y = contentY + i * step;
+      ++shown;
+      headers += view.rows[i]->sectionHeader;
+    }
+    int rowStep = step;
+    if (shown * step + headers * headerHeight > contentHeight && shown)
+      rowStep = (contentHeight - headers * headerHeight) / shown;
+    int headerBudget = headers;
+    while (headerBudget > 0 && rowStep < minStep) {
+      --headerBudget;
+      rowStep = (contentHeight - headerBudget * headerHeight) / shown;
+    }
+    int y = contentY;
+    int headersDrawn = 0;
+    for (int i = 0; i < shown; ++i) {
       const bool selected = view.selection == static_cast<int>(view.pageStart) + i;
+      const bool heading = view.rows[i]->sectionHeader && headersDrawn < headerBudget;
+      if (heading) {
+        ++headersDrawn;
+        char count[12];
+        snprintf(count, sizeof(count), "%u", static_cast<unsigned>(view.rows[i]->sectionCount));
+        const int countWidth = r.getTextWidth(UI_12_FONT_ID, count);
+        lines(r, UI_12_FONT_ID, Rect{x + 4, y + 4, width - countWidth - 16, smallHeight}, view.rows[i]->section, 0, 1,
+              true, true);
+        r.drawText(UI_12_FONT_ID, x + width - countWidth, y + 4, count);
+        r.drawLine(x, y + headerHeight - 1, x + width, y + headerHeight - 1);
+        y += headerHeight;
+      }
       if (selected)
-        r.fillRect(x, y, width, step);
-      else
+        r.fillRect(x, y, width, rowStep);
+      else if (!heading)
         r.drawLine(x, y, x + width, y);
       r.drawRect(x + 8, y + 9, 18, 18, !selected);
       lines(r, bodyFont, Rect{x + 38, y + 2, width - 46, bodyHeight}, view.rows[i]->title, 0, 1, !selected, true);
@@ -134,8 +164,9 @@ void BaseTheme::drawDashboard(GfxRenderer& r, dashboard::View& view) {
         snprintf(metadata, sizeof(metadata), "%s - %s", view.rows[i]->project, view.rows[i]->due);
       else
         snprintf(metadata, sizeof(metadata), "%s", view.rows[i]->due[0] ? view.rows[i]->due : tr(STR_DASH_NO_DUE_DATE));
-      lines(r, UI_12_FONT_ID, Rect{x + 38, y + step - smallHeight - 2, width - 46, smallHeight}, metadata, 0, 1,
+      lines(r, UI_12_FONT_ID, Rect{x + 38, y + rowStep - smallHeight - 2, width - 46, smallHeight}, metadata, 0, 1,
             !selected);
+      y += rowStep;
     }
   } else if (view.screen == Screen::Detail) {
     view.nextDetailOffset = lines(r, bodyFont, Rect{x, contentY, width, contentHeight}, view.detailText,
